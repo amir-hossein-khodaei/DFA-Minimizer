@@ -21,19 +21,13 @@ public class EditableLabel extends Pane {
 
         displayLabel.setFont(new Font(DEFAULT_FONT_FAMILY, DEFAULT_FONT_SIZE));
         editor.setFont(new Font(DEFAULT_FONT_FAMILY, DEFAULT_FONT_SIZE));
-        editor.setVisible(true);
+        editor.setVisible(false);
+        displayLabel.setVisible(true);
 
 
         getChildren().addAll(displayLabel, editor);
 
-        editor.focusedProperty().addListener((obs, wasFocused, isNowFocused) -> {
-            if (!isNowFocused) {
-                finalizeLabel();
-            }
-        });
-
         this.setPickOnBounds(false);
-        this.setMouseTransparent(true);
 
 
     }
@@ -58,6 +52,7 @@ public class EditableLabel extends Pane {
         editor.setText(displayLabel.getText());
         displayLabel.setVisible(false);
         editor.setVisible(true);
+        editor.setMouseTransparent(false);
         Platform.runLater(() -> {
             editor.requestFocus();
             editor.selectAll();
@@ -68,6 +63,7 @@ public class EditableLabel extends Pane {
     public void finalizeLabel() {
         displayLabel.setText(editor.getText());
         editor.setVisible(false);
+        editor.setMouseTransparent(true);
         displayLabel.setVisible(true);
     }
 

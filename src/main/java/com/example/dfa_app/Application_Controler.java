@@ -15,6 +15,9 @@ import javafx.scene.paint.Color;
 import javafx.scene.shape.Circle;
 import javafx.event.EventHandler;
 import javafx.util.Duration;
+import javafx.scene.input.KeyCode;
+import javafx.event.ActionEvent;
+import javafx.scene.control.Alert.AlertType;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -22,6 +25,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class Application_Controler  implements SelectionListener  {
     @FXML
@@ -70,6 +74,7 @@ public class Application_Controler  implements SelectionListener  {
     private DFA dfa;
     private Transition currentTransition;
     private boolean waitingForSecondClick = false;
+    private boolean isPlacingNewState = false; // Flag for new state placement
 
     @FXML
     public void initialize() {
@@ -84,92 +89,142 @@ public class Application_Controler  implements SelectionListener  {
         );
         dfaUpdater.setCycleCount(Timeline.INDEFINITE);
         dfaUpdater.play();
-        // Global mouse click handler for creating transitions.
-        pane.addEventHandler(MouseEvent.MOUSE_CLICKED, mouseEvent -> {
-            Node clickedNode = mouseEvent.getPickResult().getIntersectedNode();
-            // If the clicked node is a state (Circle), handle state selection/deselection.
-            if (clickedNode.getUserData() instanceof State) {
-                State state = (State) clickedNode.getUserData();
 
-                // Right-click or secondary button toggles selection.
-                if (mouseEvent.getButton() == MouseButton.SECONDARY) {
-                    if (state.isSelected()) {
-                        state.deselect();
-                    } else {
-                        state.select();
-                    }
+        final AtomicReference<EventHandler<MouseEvent>> transitionMouseMoveHandlerRef = new AtomicReference<>();
+
+        // --- SINGLE MOUSE CLICKED Filter (Handles Everything) ---
+        pane.addEventFilter(MouseEvent.MOUSE_CLICKED, mouseEvent -> {
+            // Ignore clicks if currently placing a new state via Ctrl+N
+            if (isPlacingNewState) {
+                // System.out.println("Clicked Filter: Ignoring click because isPlacingNewState=true"); // Keep log minimal
+                return; 
+            }
+
+            Node clickedNode = mouseEvent.getPickResult().getIntersectedNode();
+            State currentlySelected = State.getSelectedState();
+            
+            // Log click target
+            String clickedInfo = "Clicked on: " + (clickedNode == null ? "null" : clickedNode.getClass().getSimpleName());
+            if (clickedNode != null && clickedNode.getUserData() != null) {
+                 clickedInfo += " (userData: " + clickedNode.getUserData().getClass().getSimpleName() + ")";
+            }
+             System.out.println(clickedInfo);
+
+            // --- Revised Logic Order ---
+            
+            // 1. Handle Transition Completion (if waiting)
+            if (waitingForSecondClick) {
+                System.out.println("[Completion] Entered block. currentTransition is " + (currentTransition == null ? "NULL" : "NOT NULL"));
+                
+                pane.setOnMouseMoved(null); // Stop arrow following
+                transitionMouseMoveHandlerRef.set(null);
+
+                // Ignore clicks on pane during second step
+                if (clickedNode == pane) { 
+                    System.out.println("[Completion] Ignoring click on pane.");
                     mouseEvent.consume();
                     return;
                 }
-                // Left-click (primary button) on an already selected state deselects it.
-                else if (mouseEvent.getButton() == MouseButton.PRIMARY) {
-                    if (state.isSelected()) {
-                        state.deselect();
-                        mouseEvent.consume();
-                        return;
-                    }
+                
+                // --- Find Target State by walking up hierarchy --- 
+                State targetState = null;
+                Node current = clickedNode;
+                while (current != null && !(current instanceof State)) {
+                     System.out.println("[Completion] Walking up... current node is: " + current.getClass().getSimpleName());
+                     current = current.getParent();
                 }
-            }
-
-
-
-//            if (clickedNode.getUserData() instanceof State) {
-//                Transition transition = (Transition) clickedNode.getUserData();
-//
-//                // Right-click or secondary button toggles selection.
-//                if (mouseEvent.getButton() == MouseButton.SECONDARY) {
-//                    if (state.isSelected()) {
-//                        state.deselect();
-//                    } else {
-//                        state.select();
-//                    }
-//                    mouseEvent.consume();
-//                    return;
-//                }
-//                // Left-click (primary button) on an already selected state deselects it.
-//                else if (mouseEvent.getButton() == MouseButton.PRIMARY) {
-//                    if (state.isSelected()) {
-//                        state.deselect();
-//                        mouseEvent.consume();
-//                        return;
-//                    }
-//                }
-//            }
-
-            // If a transition is already in creation mode, then this is the second click.
-            if (waitingForSecondClick) {
-                if (clickedNode instanceof Circle) {
-                    State targetState = (State) clickedNode.getUserData();
+                if (current instanceof State) {
+                     targetState = (State) current;
+                     System.out.println("[Completion] Found target state via hierarchy walk: " + targetState.getName());
+                } else {
+                     System.out.println("[Completion] Could not find State parent for clicked node: " + (clickedNode == null ? "null" : clickedNode.getClass().getSimpleName()));
+                }
+                // ------------------------------------------------
+                
+                // Check if we found a target state and have a transition pending
+                if (currentTransition != null && targetState != null) {
+                    // Complete the transition 
+                    currentTransition.completeTransition(targetState); 
+                    currentTransition.setSymbol("?"); 
+                    currentTransition.getFromState().addTransition(currentTransition);
+                    System.out.println("Transition added: (" + currentTransition.getFromState().getName() + " -> " + targetState.getName() + ") with default symbol '?'");
+                    currentTransition.select(); // Selects and triggers editing
+                    
+                } else {
+                     // Click was not on a valid state -> Cancel
+                     System.out.println("Transition cancelled: Second click target was not resolved to a State.");
                     if (currentTransition != null) {
-                        System.out.println("Second click on a state. Completing transition...");
-                        currentTransition.completeTransition(targetState);
-                        // Optionally, set a selection listener if you need additional logic.
-                        currentTransition.setSelectionListener(this);
+                        pane.getChildren().remove(currentTransition);
                     }
                 }
+                
+                // Reset state regardless of success/failure of completion
+                System.out.println("[Completion] Resetting flags.");
                 waitingForSecondClick = false;
                 currentTransition = null;
                 mouseEvent.consume();
-                return;
+                return; // Finished handling completion attempt
             }
-
-            // For the first click: if Ctrl is held and a state (Circle) is clicked, create a Transition.
-            if (mouseEvent.isControlDown() && clickedNode instanceof Circle) {
-                System.out.println("CTRL + click on a state. Initiating transition creation...");
+            
+            // 2. Handle Transition Initiation (Ctrl+Click on state) - CHECK BEFORE GENERAL STATE CLICK
+            if (!waitingForSecondClick && mouseEvent.isControlDown() && mouseEvent.getButton() == MouseButton.PRIMARY && 
+                clickedNode != null && clickedNode.getUserData() instanceof State) {
+                
+                System.out.println("Handling Click: Transition Initiation");
                 State fromState = (State) clickedNode.getUserData();
-                currentTransition = new Transition(fromState);
-                // Attach this controller as the selection listener if needed.
-                currentTransition.setSelectionListener(this);
+                currentTransition = new Transition(fromState); 
+                transitionMouseMoveHandlerRef.set(moveEvent -> {
+                     if (currentTransition != null) {
+                         currentTransition.setTempEnd(moveEvent.getX(), moveEvent.getY());
+                     }
+                     moveEvent.consume();
+                });
+                pane.setOnMouseMoved(transitionMouseMoveHandlerRef.get());
                 waitingForSecondClick = true;
-                mouseEvent.consume();
-                return;
+                mouseEvent.consume(); 
+                return; // Finished handling initiation
             }
-            mouseEvent.consume();
-        });
+            
+            // 3. Handle State Selection/Deselection (No Ctrl, Click on state)
+            if (clickedNode != null && clickedNode.getUserData() instanceof State) {
+                 System.out.println("Handling Click: State Select/Deselect");
+                State state = (State) clickedNode.getUserData();
+                if (mouseEvent.getButton() == MouseButton.SECONDARY) {
+                    state.select();
+                } else if (mouseEvent.getButton() == MouseButton.PRIMARY) {
+                    if (currentlySelected == state && !currentlySelected.wasJustDragged()) {
+                        currentlySelected.deselect();
+                    }
+                }
+                mouseEvent.consume(); 
+                return; // Finished handling state click
+            }
+            
+            // 4. Handle Pane Click Deselection (if none of the above)
+            if (!mouseEvent.isConsumed() && clickedNode == pane) {
+                 System.out.println("Handling Click: Pane Click Deselect");
+                 // Deselect currently selected State OR Transition
+                if (currentlySelected != null && !currentlySelected.wasJustDragged()) {
+                    currentlySelected.deselect();
+                } else if (Transition.getSelectedTransition() != null) {
+                     // Add check for dragging if needed for transitions too
+                     Transition.getSelectedTransition().deselect();
+                } 
+                mouseEvent.consume(); 
+                 return; // Finished handling pane click
+            }
+            
+            // 5. Fall through - Log if click wasn't handled
+             if (!mouseEvent.isConsumed()) {
+                 System.out.println("Warning: Click event was not consumed by any specific logic.");
+             }
 
+        }); // End of MOUSE_CLICKED filter
 
+        // REMOVE MOUSE PRESSED Filter 
+        // pane.addEventFilter(MouseEvent.MOUSE_PRESSED, mouseEvent -> { ... });
 
-        // When process button is clicked, first build the DFA from current UI elements.
+        // Button action for minimization process
         startProcessButton.setOnAction(actionEvent -> {
             buildDFAFromPane();
             dfa.removeUnreachableStates();
@@ -177,54 +232,143 @@ public class Application_Controler  implements SelectionListener  {
             dfa.printMinimizedDFA();
         });
 
-        // Global key handlers.
+        // Global key handlers
         BorderPane.setOnKeyPressed(event -> {
+            // Temporary listeners need to be declared outside the handlers to be removable using array holders
+            // Use AtomicReference for handlers to allow modification within lambda expressions
+            final AtomicReference<EventHandler<MouseEvent>> firstClickHandlerRef = new AtomicReference<>();
+            final AtomicReference<EventHandler<MouseEvent>> mouseMoveHandlerRef = new AtomicReference<>();
+            final AtomicReference<EventHandler<ActionEvent>> enterPlacementHandlerRef = new AtomicReference<>();
+            final AtomicReference<EventHandler<MouseEvent>> secondClickHandlerRef = new AtomicReference<>();
+            final AtomicReference<EventHandler<ActionEvent>> secondEnterHandlerRef = new AtomicReference<>();
+
             switch (event.getCode()) {
-                case D:
+                case D: 
                     if (event.isControlDown()) {
-                        System.out.println("ctrl+d"); // Delete
+                        State selectedState = State.getSelectedState();
+                        if (selectedState != null) {
+                             System.out.println("Deleting state: " + selectedState.getName());
+                             selectedState.deleteState(); 
+                        }
                         event.consume();
                     }
                     break;
-                case Z:
+                case Z: // Undo (Ctrl+Z)
                     if (event.isControlDown()) {
-                        System.out.println("ctrl+z"); // Undo
+                        System.out.println("Ctrl+Z pressed. (Undo not implemented)");
                         event.consume();
                     }
                     break;
-                case Y:
+                case Y: // Redo (Ctrl+Y)
                     if (event.isControlDown()) {
-                        System.out.println("ctrl+y"); // Redo
+                        System.out.println("Ctrl+Y pressed. (Redo not implemented)");
                         event.consume();
                     }
                     break;
-                case S:
+                case S: // Save (Ctrl+S)
                     if (event.isControlDown()) {
-                        System.out.println("ctrl+s"); // Save file
+                        System.out.println("Ctrl+S pressed. (Save not implemented)");
                         event.consume();
                     }
                     break;
-                case O:
+                case O: // Open (Ctrl+O)
                     if (event.isControlDown()) {
-                        System.out.println("ctrl+o"); // Open file
+                        System.out.println("Ctrl+O pressed. (Open not implemented)");
                         event.consume();
                     }
                     break;
-                case R:
+                case R: // Run Minimization (Ctrl+R)
                     if (event.isControlDown()) {
-                        System.out.println("ctrl+R"); // Start minimization
+                        System.out.println("Ctrl+R pressed. Triggering minimization.");
+                        startProcessButton.fire(); // Simulate button click
                         event.consume();
                     }
                     break;
-                case K:
+                case K: // Clear Pane (Ctrl+K)
                     if (event.isControlDown()) {
-                        System.out.println("ctrl+k"); // Clear
+                        System.out.println("Ctrl+K pressed. (Clear not implemented)");
+                         // Needs logic to remove all states and transitions from pane and DFA
                         event.consume();
                     }
                     break;
-                case N:
+                case N: // New State (Ctrl+N)
                     if (event.isControlDown()) {
-                        createState(); // Create a new state interactively.
+                        // Prevent starting another placement if one is in progress
+                        if (isPlacingNewState) return; 
+                        
+                        System.out.println("Creating new state..."); 
+                        isPlacingNewState = true; // Set flag
+
+                        State newState = new State(-50, -50, 30, Color.WHITE); 
+                        newState.setSelectionListener(this);
+                        pane.getChildren().add(newState);
+                        newState.select(); // Select immediately
+
+                        // Make state follow mouse
+                        mouseMoveHandlerRef.set(moveEvent -> {
+                            newState.moveState(moveEvent.getX(), moveEvent.getY());
+                            moveEvent.consume();
+                        });
+                        pane.setOnMouseMoved(mouseMoveHandlerRef.get());
+
+                        // Define the common placement/finalization logic 
+                        final AtomicReference<Runnable> placementLogicRef = new AtomicReference<>();
+                        placementLogicRef.set(() -> {
+                            pane.setOnMouseMoved(null);
+                            pane.setOnMouseClicked(null);
+                            if (newState.getEditableLabel().getEditor() != null) {
+                                newState.getEditableLabel().getEditor().setOnAction(null);
+                            }
+
+                            if (isOverlapping(newState)) {
+                                showOverlapError();
+                                pane.getChildren().remove(newState);
+                                isPlacingNewState = false; // Reset flag on failure
+                                return; 
+                            }
+
+                            newState.deselect();
+
+                            if (State.getSelectedState() == newState) {
+                                // Deselect failed, setup second attempt listeners
+                                secondEnterHandlerRef.set(actionEvent -> {
+                                    placementLogicRef.get().run();
+                                    actionEvent.consume();
+                                });
+                                if (newState.getEditableLabel().getEditor() != null) {
+                                     newState.getEditableLabel().getEditor().setOnAction(secondEnterHandlerRef.get());
+                                }
+                                secondClickHandlerRef.set(mouseEvent -> {
+                                    if (mouseEvent.getButton() == MouseButton.PRIMARY) {
+                                        placementLogicRef.get().run();
+                                        mouseEvent.consume();
+                                    }
+                                });
+                                pane.setOnMouseClicked(secondClickHandlerRef.get());
+                            } else {
+                                System.out.println("State '" + newState.getName() + "' added successfully."); 
+                                isPlacingNewState = false; // Reset flag on successful finalization
+                            }
+                        });
+
+                        // Initial Enter Listener
+                        enterPlacementHandlerRef.set(actionEvent -> {
+                             placementLogicRef.get().run();
+                             actionEvent.consume();
+                        });
+                         if (newState.getEditableLabel().getEditor() != null) {
+                              newState.getEditableLabel().getEditor().setOnAction(enterPlacementHandlerRef.get());
+                         }
+
+                        // Initial Left Click Listener
+                        firstClickHandlerRef.set(mouseEvent -> {
+                            if (mouseEvent.getButton() == MouseButton.PRIMARY) {
+                                placementLogicRef.get().run();
+                                mouseEvent.consume();
+                            }
+                        });
+                        pane.setOnMouseClicked(firstClickHandlerRef.get());
+
                         event.consume();
                     }
                     break;
@@ -267,49 +411,8 @@ public class Application_Controler  implements SelectionListener  {
                 transitionsMap.put(s, transMap);
             }
         }
-        // Pass the assembled data to the DFA’s configuration method.
+        // Pass the assembled data to the DFA's configuration method.
         dfa.configureDFA(stateList, alphabet, initialState, acceptingStates, transitionsMap);
-    }
-
-    /**
-     * Creates a new state and allows the user to place it on the pane via mouse movement.
-     * A temporary mouse handler lets the state follow the cursor until its position is finalized.
-     */
-    private void createState() {
-        // Create a new state using the four-parameter constructor (name to be finalized later).
-        State newState = new State(-30, -30, 30, Color.WHITE);
-        newState.setSelectionListener(this);
-        pane.getChildren().add(newState);
-        newState.select();
-
-        // Handler to have the state follow the mouse.
-        EventHandler<MouseEvent> mouseMoveHandler = event -> {
-            newState.moveState(event.getX(), event.getY());
-            event.consume();
-        };
-        pane.setOnMouseMoved(mouseMoveHandler);
-
-        // First-click freezes the state's position and checks for overlap.
-        EventHandler<MouseEvent> firstClickHandler = event -> {
-            pane.setOnMouseMoved(null); // Stop moving with the mouse.
-            if (isOverlapping(newState)) {
-                showOverlapError();
-                // If the placement is invalid, re-enable movement.
-                pane.setOnMouseMoved(mouseMoveHandler);
-                return;
-            }
-            pane.setOnMouseClicked(null); // Remove this temporary handler.
-            // Final click handler to finalize the state (e.g., complete label editing).
-            pane.setOnMouseClicked(finalClickEvent -> {
-                newState.deselect(); // Finalizes the label with validations.
-                pane.setOnMouseClicked(null);
-                finalClickEvent.consume();
-            });
-            event.consume();
-        };
-
-        pane.setOnMouseClicked(firstClickHandler);
-        System.out.println("New state added to the pane.");
     }
 
     /**
@@ -349,25 +452,38 @@ public class Application_Controler  implements SelectionListener  {
 
     public void onSelected(Object obj) {
         if (obj instanceof State) {
-            // Update state-related UI components here if needed.
-            // Then switch to the State Settings tab.
+            State selected = (State) obj;
+            stateNameTextField.setText(selected.getName());
+            acceptingStateCheck.setSelected(selected.isAccepting());
             TabPane.getSelectionModel().select(stateSettingsTab);
         } else if (obj instanceof CurvedArrow) {
-
-            // Update transition-related UI components here if needed.
-            // Then switch to the Transition Settings tab.
-            TabPane.getSelectionModel().select(transitionSettingsTab);
+            Transition selected = null;
+            Object arrowUserData = ((CurvedArrow) obj).getUserData();
+            if (arrowUserData instanceof Transition) {
+                selected = (Transition) arrowUserData;
+                fromStateCombo.getSelectionModel().select(selected.getFromState().getName());
+                toStateCombo.getSelectionModel().select(selected.getNextState().getName());
+                transitionNameCombo.getSelectionModel().select(selected.getSymbol());
+                TabPane.getSelectionModel().select(transitionSettingsTab);
+            }
         }
     }
 
     @Override
     public void onDeselected(Object obj) {
         if (obj instanceof State) {
-//            ((State) obj).setName(stateNameTextField.getText());
+            State deselected = (State) obj;
         }
         else if (obj instanceof CurvedArrow) {
-
         }
+    }
 
+    // Helper method for showing alerts (if not already present)
+    private void showAlert(AlertType alertType, String title, String content) {
+        Alert alert = new Alert(alertType);
+        alert.setTitle(title);
+        alert.setHeaderText(null);
+        alert.setContentText(content);
+        alert.showAndWait();
     }
 }

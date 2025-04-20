@@ -12,6 +12,7 @@ import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.Pane;
 import javafx.scene.shape.Circle;
 import javafx.util.Duration;
+import javafx.event.ActionEvent;
 
 /**
  * Represents a connection (transition) between two states.
@@ -26,6 +27,11 @@ public class Transition extends Group implements simularity {
     private final CurvedArrow curvedArrow;
     private final EditableLabel editableLabel;
     private boolean complete = false;
+    private String symbol = "?"; // Initialize symbol
+    
+    // Fields to store the fixed control point offset vector components relative to the perpendicular vector
+    private double fixedControlOffsetFactor = 0; 
+    private boolean controlOffsetFactorSet = false;
 
     // Used while drawing interactively.
     private double tempEndX;
@@ -33,8 +39,8 @@ public class Transition extends Group implements simularity {
 
     // Offset for computing a perpendicular control point.
     private static final double CONTROL_OFFSET = 40.0;
-    private String symbol;
     private SelectionListener selectionListener;
+    private static Transition selectedTransition = null; // Track selected transition
 
     public Transition(State fromState) {
         if (fromState == null) {
@@ -43,8 +49,8 @@ public class Transition extends Group implements simularity {
         this.fromState = fromState;
         this.curvedArrow = new CurvedArrow();
         this.editableLabel = new EditableLabel();
-        editableLabel.setText("");
-        editableLabel.setVisible(true);
+        editableLabel.setText("?");
+        editableLabel.setVisible(false);
 
         // Enable key events.
         this.setFocusTraversable(true);
@@ -65,6 +71,16 @@ public class Transition extends Group implements simularity {
         updateTransition();
     }
 
+    // Getter for the editable label
+    public EditableLabel getEditableLabel() {
+        return editableLabel;
+    }
+
+    // Getter for the 'from' state
+    public State getFromState() {
+        return fromState;
+    }
+
     public CurvedArrow getCurvedArrow() {
         return curvedArrow;
     }
@@ -80,48 +96,46 @@ public class Transition extends Group implements simularity {
     private void updateTransition() {
         double fromX = fromState.getLayoutX();
         double fromY = fromState.getLayoutY();
-        double startX, startY, endX, endY, controlX, controlY, dx, dy, distance;
+        double startX, startY, endX, endY, controlX, controlY;
 
         if (complete && toState != null) {
-            // For self-loop transitions.
             if (fromState == toState) {
                 double radius = fromState.getMainCircle().getRadius();
                 startX = fromX;
                 startY = fromY - radius;
                 endX = fromX + radius;
                 endY = fromY;
-                double midX = (startX + endX) / 2.0;
-                double midY = (startY + endY) / 2.0;
-                controlX = midX;
-                controlY = midY - radius;
+                controlX = fromX;
+                controlY = fromY - radius * 2.5;
             } else {
-                // For transitions between distinct states.
                 double toX = toState.getLayoutX();
                 double toY = toState.getLayoutY();
-                dx = toX - fromX;
-                dy = toY - fromY;
-                distance = Math.hypot(dx, dy);
+                double dx = toX - fromX;
+                double dy = toY - fromY;
+                double distance = Math.hypot(dx, dy);
                 if (distance == 0) { distance = 1; }
+                
                 double fromRadius = fromState.getMainCircle().getRadius();
                 startX = fromX + (dx / distance) * fromRadius;
                 startY = fromY + (dy / distance) * fromRadius;
                 double toRadius = toState.getMainCircle().getRadius();
                 endX = toX - (dx / distance) * toRadius;
                 endY = toY - (dy / distance) * toRadius;
+                
                 double midX = (startX + endX) / 2.0;
                 double midY = (startY + endY) / 2.0;
-                double norm = Math.hypot(dx, dy);
+                
+                double norm = distance;
                 double perpX = -dy / norm;
                 double perpY = dx / norm;
-                double extraOffset = (int) (Math.random() * 201) - 100;
-                controlX = midX + (CONTROL_OFFSET + extraOffset) * perpX;
-                controlY = midY + (CONTROL_OFFSET + extraOffset) * perpY;
+                
+                controlX = midX + fixedControlOffsetFactor * perpX;
+                controlY = midY + fixedControlOffsetFactor * perpY;
             }
         } else {
-            // While drawing interactively.
-            dx = tempEndX - fromX;
-            dy = tempEndY - fromY;
-            distance = Math.hypot(dx, dy);
+            double dx = tempEndX - fromX;
+            double dy = tempEndY - fromY;
+            double distance = Math.hypot(dx, dy);
             if (distance == 0) { distance = 1; }
             double fromRadius = fromState.getMainCircle().getRadius();
             startX = fromX + (dx / distance) * fromRadius;
@@ -130,12 +144,12 @@ public class Transition extends Group implements simularity {
             endY = tempEndY;
             double midX = (startX + endX) / 2.0;
             double midY = (startY + endY) / 2.0;
-            double norm = Math.hypot(dx, dy);
+            double norm = distance;
             double perpX = -dy / norm;
             double perpY = dx / norm;
-            double extraOffset = (int) (Math.random() * 201) - 100;
-            controlX = midX + (CONTROL_OFFSET + extraOffset) * perpX;
-            controlY = midY + (CONTROL_OFFSET + extraOffset) * perpY;
+            double dynamicOffset = CONTROL_OFFSET + (int) (Math.random() * 21) - 10;
+            controlX = midX + dynamicOffset * perpX;
+            controlY = midY + dynamicOffset * perpY;
         }
 
         curvedArrow.setStart(startX, startY);
@@ -144,15 +158,27 @@ public class Transition extends Group implements simularity {
 
         if (complete) {
             Platform.runLater(() -> {
-                editableLabel.applyCss();
-                editableLabel.layout();
-                double labelWidth = editableLabel.getLabelWidth();
-                double labelHeight = editableLabel.getLabelHeight();
-                double[] tip = curvedArrow.getArrowTip();
-                double labelX = tip[0] - labelWidth / 2.0;
-                double labelY = tip[1] - labelHeight / 2.0;
-                editableLabel.setLabelPosition(labelX, labelY);
-                editableLabel.setEditorPosition(labelX, labelY);
+                try {
+                    editableLabel.applyCss();
+                    editableLabel.layout();
+                    double labelWidth = editableLabel.getLabelWidth();
+                    double labelHeight = editableLabel.getLabelHeight();
+                    double[] tip = curvedArrow.getArrowTip();
+                    if (tip == null || tip.length < 2) {
+                        System.err.println("[Transition Update] Error: getArrowTip() returned invalid data.");
+                        return;
+                    }
+                    double labelX = tip[0] - labelWidth / 2.0;
+                    double labelY = tip[1] - labelHeight / 2.0;
+                    
+                    System.out.println("[Transition Update] Label Pos: x=" + labelX + ", y=" + labelY + ", w=" + labelWidth + ", h=" + labelHeight);
+                    
+                    editableLabel.setLabelPosition(labelX, labelY);
+                    editableLabel.setEditorPosition(labelX, labelY);
+                } catch (Exception e) {
+                    System.err.println("[Transition Update] Error during label position update: " + e.getMessage());
+                    e.printStackTrace();
+                }
             });
         }
     }
@@ -163,39 +189,35 @@ public class Transition extends Group implements simularity {
             throw new IllegalArgumentException("Target state cannot be null.");
         }
         this.toState = targetState;
-        attemptFinalizeName();
         this.complete = true;
         curvedArrow.setComplete(true);
-
+        
+        if (!controlOffsetFactorSet && fromState != toState) {
+            double extraOffset = (int) (Math.random() * 41) - 20;
+            fixedControlOffsetFactor = CONTROL_OFFSET + extraOffset;
+            controlOffsetFactorSet = true;
+        } else if (fromState == toState) {
+            fixedControlOffsetFactor = 0;
+            controlOffsetFactorSet = true;
+        }
+        
         InvalidationListener toListener = obs -> updateTransition();
         toState.layoutXProperty().addListener(toListener);
         toState.layoutYProperty().addListener(toListener);
 
         editableLabel.setVisible(true);
-        FadeTransition ft = new FadeTransition(Duration.millis(300), editableLabel);
-        ft.setFromValue(0.0);
-        ft.setToValue(1.0);
-        ft.play();
+        editableLabel.setText("?");
 
         updateTransition();
     }
 
-    // Validates and finalizes the transition name.
-    public void attemptFinalizeName() {
-        String proposedName = editableLabel.getText();
-        if (proposedName != null && !proposedName.trim().isEmpty()) {
-            editableLabel.finalizeLabel();
-            setSymbol(proposedName);
-            System.out.println("Successful Transition Created: " + proposedName);
-            curvedArrow.deselect();
-        } else {
-            showAlert("Invalid Transition Name", "Transition name cannot be empty. Please enter a valid name.");
-            editableLabel.startEditing();
-        }
-    }
-
     public void setSymbol(String proposedName) {
-        this.symbol = proposedName;
+        // Only log if the symbol actually changes
+        if (proposedName != null && !proposedName.equals(this.symbol)) {
+            String oldSymbol = this.symbol; // Store old symbol
+            this.symbol = proposedName;
+             System.out.println("Transition symbol changed from '" + (oldSymbol == null ? "<null>" : oldSymbol) + "' to '" + proposedName + "'");
+        }
     }
 
     public String getSymbol() {
@@ -221,8 +243,33 @@ public class Transition extends Group implements simularity {
      */
     @Override
     public void select() {
-        curvedArrow.select();
-        registerControlPointDrag();
+        // Deselect previous state or transition
+         if (State.getSelectedState() != null) State.getSelectedState().deselect();
+         if (selectedTransition != null && selectedTransition != this) {
+            selectedTransition.deselect();
+        }
+        selectedTransition = this;
+        
+        curvedArrow.select(); // Visual selection
+        registerControlPointDrag(); // Allow curve dragging
+        
+        // Only start editing if the transition is complete
+        if (isComplete()) {
+             System.out.println("Transition selected and complete, starting edit.");
+            editableLabel.startEditing(); 
+             // Add Enter key listener for finalization
+             if (editableLabel.getEditor() != null) {
+                 editableLabel.getEditor().setOnAction(event -> {
+                     System.out.println("Enter pressed on transition editor.");
+                     this.deselect(); // Trigger finalization logic
+                     event.consume();
+                 });
+             } else {
+                  System.err.println("Warning: Transition editor not available in select()");
+             }
+        }
+        // Notify controller listener if needed (optional)
+        // if (selectionListener != null) { selectionListener.onSelected(this); }
     }
 
     /**
@@ -230,8 +277,20 @@ public class Transition extends Group implements simularity {
      */
     @Override
     public void deselect() {
-        curvedArrow.deselect();
-        deregisterControlPointDrag();
+        System.out.println("Transition deselect() called.");
+        // Only try to finalize symbol if it was complete and being edited
+        if (isComplete() && editableLabel.getEditor().isVisible()) { 
+            // Attempt to finalize NAME, commit deselection only if successful
+            if (!attemptFinalizeName()) { 
+                System.out.println("Finalize failed (invalid symbol), keeping selected.");
+                keepSelected(); // Keep selected if symbol is invalid
+                return; // Stop deselection
+            }
+             System.out.println("Finalize successful.");
+        }
+        // If not complete, or finalize succeeded, commit the deselection
+         System.out.println("Committing deselection.");
+        commitDeselection();
     }
 
     public boolean isSelected() {
@@ -286,5 +345,63 @@ public class Transition extends Group implements simularity {
         cp.setOnMousePressed(null);
         cp.setOnMouseDragged(null);
         cp.setOnMouseReleased(null);
+    }
+
+    // Method to check if transition is complete
+    public boolean isComplete() {
+        return complete;
+    }
+
+    // Static getter for selected transition
+    public static Transition getSelectedTransition() {
+        return selectedTransition;
+    }
+    
+    // --- Symbol Validation Helpers ---
+    private boolean isInvalidSymbol(String candidate) {
+        // Currently just checking for empty/null. 
+        // Could add uniqueness check later if needed (e.g., per from/to state pair).
+        return candidate == null || candidate.trim().isEmpty();
+    }
+    
+    private void showInvalidSymbolAlert() {
+         showAlert("Invalid Transition Symbol", "Transition symbol cannot be empty.");
+    }
+    
+    // --- Finalization Logic ---
+    public boolean attemptFinalizeName() {
+        String proposedName = editableLabel.getText();
+        if (proposedName != null && !proposedName.trim().isEmpty()) {
+            // Success
+            editableLabel.finalizeLabel();
+            setSymbol(proposedName); // Symbol set ONLY on successful finalization
+            curvedArrow.deselect(); // Maybe remove this? Deselection handles visuals.
+            return true; // Indicate success
+        } else {
+            // Failure
+            showAlert("Invalid Transition Symbol", "Transition symbol cannot be empty.");
+            editableLabel.startEditing(); // Keep editing active
+            return false; // Indicate failure
+        }
+    }
+    
+    // --- Selection State Management ---
+    private void keepSelected() {
+        editableLabel.startEditing(); // Keep editor active
+        curvedArrow.select(); // Keep visual selected state
+    }
+    
+    private void commitDeselection() {
+        curvedArrow.deselect();
+        deregisterControlPointDrag();
+        // Remove Enter listener (might already be null if finalizedSymbol succeeded)
+         if (editableLabel.getEditor() != null) {
+             editableLabel.getEditor().setOnAction(null);
+         }
+        if (selectedTransition == this) {
+            selectedTransition = null;
+        }
+        // Notify controller listener if needed (optional)
+        // if (selectionListener != null) { selectionListener.onDeselected(this); }
     }
 }

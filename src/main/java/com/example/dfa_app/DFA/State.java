@@ -10,6 +10,7 @@ import javafx.application.Platform;
 import javafx.scene.Group;
 import javafx.scene.control.Alert;
 import javafx.scene.input.MouseButton;
+import javafx.scene.input.MouseEvent;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Circle;
 import javafx.util.Duration;
@@ -34,6 +35,11 @@ public class State extends Group implements simularity {
     private static long idCounter = 0;
     private static final Set<String> stateNames = new HashSet<>();
 
+    // Static getter for the selected state
+    public static State getSelectedState() {
+        return selectedState;
+    }
+
     // --- Instance Fields ---
     private final long id;
     private String name;
@@ -42,7 +48,7 @@ public class State extends Group implements simularity {
     private final Circle mainCircle;
     private Circle acceptingIndicator;
     private final EditableLabel editableLabel;
-private final boolean selected = false;
+    private boolean wasJustDragged = false; // Flag for drag state
     // Drag and event related fields.
     private double dragDeltaX;
     private double dragDeltaY;
@@ -63,7 +69,6 @@ private final boolean selected = false;
 
         editableLabel = new EditableLabel();
         editableLabel.setEditorPosition(radius, -1.5 * radius);
-        editableLabel.setMouseTransparent(true);
 
         // Add visual components to the Group.
         getChildren().addAll(mainCircle, editableLabel);
@@ -134,6 +139,12 @@ private final boolean selected = false;
         }
     }
 
+    public void addTransition(Transition transition) {
+        if (transition != null && !transitions.contains(transition)) {
+            transitions.add(transition);
+        }
+    }
+
     public void removeTransition(String symbol, State nextState) {
         transitions.removeIf(t -> t.getSymbol().equals(symbol) && Objects.equals(t.getNextState(), nextState));
     }
@@ -175,6 +186,7 @@ private final boolean selected = false;
             selectedState.deselect();
         }
         selectedState = this;
+        wasJustDragged = false; // Reset flag on selection
         mainCircle.setStroke(Color.BLUE);
         ScaleTransition scaleUp = new ScaleTransition(Duration.millis(200), this);
         scaleUp.setToX(1.1);
@@ -182,29 +194,51 @@ private final boolean selected = false;
         scaleUp.play();
 
         editableLabel.startEditing();
+
+        if (editableLabel.getEditor() != null) {
+            editableLabel.getEditor().setOnAction(event -> {
+                this.deselect(); 
+                event.consume();
+            });
+        } else {
+             System.err.println("Warning: Editor TextField not available immediately after startEditing in select()");
+        }
+
         if (selectionListener != null) {
             selectionListener.onSelected(this);
         }
 
-        offsetX = mainCircle.getRadius();
-        offsetY = mainCircle.getRadius();
-
-        // Configure dragging.
+        // --- Restore original press/drag/release handlers for movement & flag setting ---
         this.setOnMousePressed(e -> {
             if (e.getButton() == MouseButton.PRIMARY) {
+                wasJustDragged = false; // Ensure flag is false when press starts
                 dragDeltaX = e.getSceneX() - getLayoutX();
                 dragDeltaY = e.getSceneY() - getLayoutY();
-                requestFocus();
+                requestFocus(); 
+                editableLabel.getEditor().requestFocus(); 
                 e.consume();
             }
         });
+
         this.setOnMouseDragged(e -> {
             if (e.getButton() == MouseButton.PRIMARY) {
-                double newX = e.getSceneX() - dragDeltaX;
-                double newY = e.getSceneY() - dragDeltaY;
-                moveState(newX, newY);
-                e.consume();
+                 double newX = e.getSceneX() - dragDeltaX;
+                 double newY = e.getSceneY() - dragDeltaY;
+                 moveState(newX, newY);
+                 e.consume();
             }
+         });
+
+        // Set flag on mouse release, reset it shortly after
+        this.setOnMouseReleased(e -> {
+             if (e.getButton() == MouseButton.PRIMARY) {
+                 wasJustDragged = true;
+                 // Reset the flag after the current event processing is done
+                 Platform.runLater(() -> {
+                     wasJustDragged = false;
+                 });
+                 e.consume(); 
+             }
         });
     }
 
@@ -267,13 +301,20 @@ private final boolean selected = false;
      * Updates the internal name and corresponding UI elements.
      */
     private void updateName(String newName) {
+        // Only proceed if the name is actually different
         if (!newName.equals(this.name)) {
-            if (!isNullOrEmpty(this.name)) {
-                stateNames.remove(this.name);
+            String oldName = this.name; // Store old name for logging
+            // Remove old name from global set if it existed
+            if (!isNullOrEmpty(oldName)) {
+                stateNames.remove(oldName);
             }
+            // Set the new name
             this.name = newName;
             stateNames.add(newName);
+            // Update the visual label
             setLabelText(newName);
+            // Log the change
+            System.out.println("State name changed from '" + (isNullOrEmpty(oldName) ? "<empty>" : oldName) + "' to '" + newName + "'");
         }
     }
 
@@ -281,8 +322,9 @@ private final boolean selected = false;
      * Keeps the state in selection mode by restarting editing and maintaining the visual style.
      */
     private void keepInSelectionMode() {
+        // Ensure editing is restarted and editor is visible
         Platform.runLater(editableLabel::startEditing);
-        mainCircle.setStroke(Color.BLUE);
+        mainCircle.setStroke(Color.BLUE); // Keep visual selection cue
     }
 
     /**
@@ -295,14 +337,22 @@ private final boolean selected = false;
         scaleDown.setToY(1.0);
         scaleDown.play();
 
+        editableLabel.finalizeLabel();
+
         if (selectedState == this) {
             selectedState = null;
         }
         if (selectionListener != null) {
             selectionListener.onDeselected(this);
         }
+        // Remove interaction handlers
         this.setOnMousePressed(null);
-        this.setOnMouseDragged(null);
+        this.setOnMouseDragged(null); 
+        this.setOnMouseReleased(null); // Make sure release handler is removed
+        
+        if(editableLabel.getEditor() != null) {
+             editableLabel.getEditor().setOnAction(null);
+         }
     }
 
     // --- Deletion ---
@@ -391,6 +441,16 @@ private final boolean selected = false;
     }
 
     public boolean isSelected() {
-        return selected  ;
+        return selectedState == this;
+    }
+
+    // Getter for the editable label
+    public EditableLabel getEditableLabel() {
+        return editableLabel;
+    }
+
+    // Getter for the temporary drag flag
+    public boolean wasJustDragged() {
+        return wasJustDragged;
     }
 }
