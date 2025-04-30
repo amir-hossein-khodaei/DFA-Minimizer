@@ -1,3 +1,5 @@
+// - JavaFX module definition for the DFA application
+// - Specifies required dependencies and exports/opens necessary packages
 module com.example.dfa_app {
     requires javafx.controls;
     requires javafx.fxml;
