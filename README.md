@@ -38,7 +38,7 @@ This tool is useful for students learning about automata theory, computer scient
 
 1. **Clone the repository**
    ```
-   git clone https://github.com/yourusername/dfa-minimizer.git
+   git clone https://github.com/Amkhodaei83/DFA
    cd dfa-minimizer
    ```
 
