@@ -132,109 +132,113 @@ public class Transition extends Group implements simularity {
     // - Recalculate and update arrow geometry
     // - Handles different cases: complete, self-loop, or in-progress
     private void updateTransition() {
-        double fromX = fromState.getLayoutX();
-        double fromY = fromState.getLayoutY();
-        // - Variables for positioning calculations
-        double startX, startY, endX, endY, controlX, controlY; 
+        Platform.runLater(() -> {
+            double fromX = fromState.getLayoutX();
+            double fromY = fromState.getLayoutY();
+            // - Variables for positioning calculations
+            double startX, startY, endX, endY, controlX, controlY; 
 
-        if (complete && toState != null) {
-            if (fromState == toState) {
-                // - Handle self-loop transition geometry
-                double radius = fromState.getMainCircle().getRadius();
-                startX = fromX; startY = fromY - radius;
-                endX = fromX + radius; endY = fromY;
-                 // - Set control point for self-loop
-                 controlX = fromX;
-                 controlY = fromY - radius * 2.5; 
-                 // - Update control point if needed
-                 if (curvedArrow.getControlX() != controlX || curvedArrow.getControlY() != controlY) {
-                     curvedArrow.setControl(controlX, controlY);
-                 }
+            if (complete && toState != null) {
+                if (fromState == toState) {
+                    // - Handle self-loop transition geometry
+                    double radius = fromState.getMainCircle().getRadius();
+                    startX = fromX; startY = fromY - radius;
+                    endX = fromX + radius; endY = fromY;
+                     // - Set control point for self-loop
+                     controlX = fromX;
+                     controlY = fromY - radius * 2.5; 
+                     // - Update control point if needed
+                     if (curvedArrow.getControlX() != controlX || curvedArrow.getControlY() != controlY) {
+                         curvedArrow.setControl(controlX, controlY);
+                     }
+                } else {
+                     // - Calculate points for standard transition between states
+                    double toX = toState.getLayoutX(); double toY = toState.getLayoutY();
+                    double dx = toX - fromX; double dy = toY - fromY;
+                    double distance = Math.hypot(dx, dy); if (distance == 0) { distance = 1; }
+                    double fromRadius = fromState.getMainCircle().getRadius();
+                    startX = fromX + (dx / distance) * fromRadius;
+                    startY = fromY + (dy / distance) * fromRadius;
+                    double toRadius = toState.getMainCircle().getRadius();
+                    endX = toX - (dx / distance) * toRadius;
+                    endY = toY - (dy / distance) * toRadius;
+
+                    // - Recalculate control point based on persistent offset
+                    double midX = (startX + endX) / 2.0; double midY = (startY + endY) / 2.0;
+                    double norm = distance; double perpX = -dy / norm; double perpY = dx / norm;
+                    controlX = midX + persistentControlOffsetFactor * perpX; 
+                    controlY = midY + persistentControlOffsetFactor * perpY;
+                    // - Update the arrow's control point
+                    curvedArrow.setControl(controlX, controlY); 
+                }
             } else {
-                 // - Calculate points for standard transition between states
-                double toX = toState.getLayoutX(); double toY = toState.getLayoutY();
-                double dx = toX - fromX; double dy = toY - fromY;
-                double distance = Math.hypot(dx, dy); if (distance == 0) { distance = 1; }
-                double fromRadius = fromState.getMainCircle().getRadius();
-                startX = fromX + (dx / distance) * fromRadius;
-                startY = fromY + (dy / distance) * fromRadius;
-                double toRadius = toState.getMainCircle().getRadius();
-                endX = toX - (dx / distance) * toRadius;
-                endY = toY - (dy / distance) * toRadius;
-
-                // - Recalculate control point based on persistent offset
-                double midX = (startX + endX) / 2.0; double midY = (startY + endY) / 2.0;
-                double norm = distance; double perpX = -dy / norm; double perpY = dx / norm;
-                controlX = midX + persistentControlOffsetFactor * perpX; 
-                controlY = midY + persistentControlOffsetFactor * perpY;
-                // - Update the arrow's control point
-                curvedArrow.setControl(controlX, controlY); 
+                 // - Handle incomplete transition geometry (following mouse)
+                 double dx = tempEndX - fromX;
+                 double dy = tempEndY - fromY;
+                 double distance = Math.hypot(dx, dy);
+                 if (distance == 0) { distance = 1; }
+                 double fromRadius = fromState.getMainCircle().getRadius();
+                 startX = fromX + (dx / distance) * fromRadius;
+                 startY = fromY + (dy / distance) * fromState.getMainCircle().getRadius();
+                 endX = tempEndX;
+                 endY = tempEndY;
+                 // - Use existing control point for incomplete transitions
+                 controlX = curvedArrow.getControlX();
+                 controlY = curvedArrow.getControlY();
             }
-        } else {
-             // - Handle incomplete transition geometry (following mouse)
-             double dx = tempEndX - fromX;
-             double dy = tempEndY - fromY;
-             double distance = Math.hypot(dx, dy);
-             if (distance == 0) { distance = 1; }
-             double fromRadius = fromState.getMainCircle().getRadius();
-             startX = fromX + (dx / distance) * fromRadius;
-             startY = fromY + (dy / distance) * fromState.getMainCircle().getRadius();
-             endX = tempEndX;
-             endY = tempEndY;
-             // - Use existing control point for incomplete transitions
-             controlX = curvedArrow.getControlX();
-             controlY = curvedArrow.getControlY();
-        }
 
-        // - Update the arrow endpoints
-        curvedArrow.setStart(startX, startY);
-        curvedArrow.setEnd(endX, endY);
-        // - Update arrowhead
-        curvedArrow.updateArrowHead(); 
+            // - Update the arrow endpoints
+            curvedArrow.setStart(startX, startY);
+            curvedArrow.setEnd(endX, endY);
+            // - Update arrowhead
+            curvedArrow.updateArrowHead(); 
 
-        if (complete) {
-            // - Update label positioning for completed transition
-            updateLabelPosition(startX, startY, endX, endY, controlX, controlY);
-        }
+            if (complete) {
+                // - Update label positioning for completed transition
+                updateLabelPosition(startX, startY, endX, endY, controlX, controlY);
+            }
+        });
     }
 
     // - Calculate and set the position for the transition label
     private void updateLabelPosition(double startX, double startY, double endX, double endY, double controlX, double controlY) {
-        if (!complete || editableLabel == null) return; // Don't update if not complete or label is missing
+        Platform.runLater(() -> {
+            if (!complete || editableLabel == null) return; // Don't update if not complete or label is missing
 
-        try {
-             boolean initialVisibility = editableLabel.isVisible();
-             // Ensure label is temporarily visible to calculate its bounds accurately
-             if (!initialVisibility) editableLabel.setVisible(true); 
-             editableLabel.applyCss(); editableLabel.layout(); // Force layout calculation
-             double labelWidth = editableLabel.getLabelWidth(); double labelHeight = editableLabel.getLabelHeight();
-             if (!initialVisibility) editableLabel.setVisible(false); // Restore original visibility
+            try {
+                 boolean initialVisibility = editableLabel.isVisible();
+                 // Ensure label is temporarily visible to calculate its bounds accurately
+                 if (!initialVisibility) editableLabel.setVisible(true); 
+                 editableLabel.applyCss(); editableLabel.layout(); // Force layout calculation
+                 double labelWidth = editableLabel.getLabelWidth(); double labelHeight = editableLabel.getLabelHeight();
+                 if (!initialVisibility) editableLabel.setVisible(false); // Restore original visibility
 
-             // If bounds are zero, maybe visibility trick didn't work, use defaults or log error
-             if (labelWidth <= 0 || labelHeight <= 0) { 
-                 // System.err.println("[Transition Update] Warning: Could not get valid label bounds. Using estimated position.");
-                 // Fallback or alternative positioning might be needed here
-                 labelWidth = 30; // Estimate
-                 labelHeight = 15; // Estimate
-             }
+                 // If bounds are zero, maybe visibility trick didn't work, use defaults or log error
+                 if (labelWidth <= 0 || labelHeight <= 0) { 
+                     // System.err.println("[Transition Update] Warning: Could not get valid label bounds. Using estimated position.");
+                     // Fallback or alternative positioning might be needed here
+                     labelWidth = 30; // Estimate
+                     labelHeight = 15; // Estimate
+                 }
 
-            // Calculate label position based on the provided curve points
-            double midCurveX = 0.25 * startX + 0.5 * controlX + 0.25 * endX;
-            double midCurveY = 0.25 * startY + 0.5 * controlY + 0.25 * endY;
-             double tangentX = endX - startX; double tangentY = endY - startY;
-             double tangentLength = Math.hypot(tangentX, tangentY);
-             double normPerpX = 0; double normPerpY = 1; // Default perpendicular if tangent is zero
-             if (tangentLength > 1e-6) { normPerpX = -tangentY / tangentLength; normPerpY = tangentX / tangentLength; }
-             double LABEL_MID_OFFSET = 15.0;
-             double labelCenterX = midCurveX + normPerpX * LABEL_MID_OFFSET;
-             double labelCenterY = midCurveY + normPerpY * LABEL_MID_OFFSET;
-             double labelX = labelCenterX - labelWidth / 2.0; double labelY = labelCenterY - labelHeight / 2.0;
-             editableLabel.setLabelPosition(labelX, labelY);
-             editableLabel.setEditorPosition(labelX, labelY);
-        } catch (Exception e) { 
-             // System.err.println("[Transition Update] Error during synchronous label position update: " + e.getMessage()); 
-             // e.printStackTrace(); 
-        }
+                // Calculate label position based on the provided curve points
+                double midCurveX = 0.25 * startX + 0.5 * controlX + 0.25 * endX;
+                double midCurveY = 0.25 * startY + 0.5 * controlY + 0.25 * endY;
+                 double tangentX = endX - startX; double tangentY = endY - startY;
+                 double tangentLength = Math.hypot(tangentX, tangentY);
+                 double normPerpX = 0; double normPerpY = 1; // Default perpendicular if tangent is zero
+                 if (tangentLength > 1e-6) { normPerpX = -tangentY / tangentLength; normPerpY = tangentX / tangentLength; }
+                 double LABEL_MID_OFFSET = 15.0;
+                 double labelCenterX = midCurveX + normPerpX * LABEL_MID_OFFSET;
+                 double labelCenterY = midCurveY + normPerpY * LABEL_MID_OFFSET;
+                 double labelX = labelCenterX - labelWidth / 2.0; double labelY = labelCenterY - labelHeight / 2.0;
+                 editableLabel.setLabelPosition(labelX, labelY);
+                 editableLabel.setEditorPosition(labelX, labelY);
+            } catch (Exception e) { 
+                 // System.err.println("[Transition Update] Error during synchronous label position update: " + e.getMessage()); 
+                 // e.printStackTrace(); 
+            }
+        });
     }
 
     // - Complete transition by connecting to target state
@@ -286,10 +290,10 @@ public class Transition extends Group implements simularity {
 
     // - Handle label editing completion with validation
     private boolean handleLabelEditComplete() {
-        System.out.println(LOG_DEBUG + "Transition handleLabelEditComplete(): Handling label edit...");
+        // System.out.println(LOG_DEBUG + "Transition handleLabelEditComplete(): Handling label edit...");
         if (editableLabel == null || editableLabel.getEditor() == null) {
-            System.out.println(LOG_WARN + "Transition handleLabelEditComplete(): Label or Editor is null, cannot complete.");
-            return true; // Cannot edit, so consider it vacuously successful?
+            // System.out.println(LOG_WARN + "Transition handleLabelEditComplete(): Label or Editor is null, cannot complete.");
+            return false;
         }
         
         String newSymbol = editableLabel.getText();
@@ -306,7 +310,7 @@ public class Transition extends Group implements simularity {
         // Check for determinism violation (only if symbol changed)
         if (!newSymbol.equals(originalSymbol)) {
              if (fromState == null) { // Safety check
-                 System.err.println(LOG_WARN + "Transition handleLabelEditComplete(): fromState is null!");
+                 // System.err.println(LOG_WARN + "Transition handleLabelEditComplete(): fromState is null!");
                  return false; // Cannot check determinism
              }
             for (Transition existingTransition : fromState.getTransitions()) {
@@ -323,7 +327,7 @@ public class Transition extends Group implements simularity {
         }
 
         // Validation passed 
-        System.out.println(LOG_DEBUG + "Transition handleLabelEditComplete(): Validation passed.");
+        // System.out.println(LOG_DEBUG + "Transition handleLabelEditComplete(): Validation passed.");
         this.setSymbol(newSymbol); // Updates internal symbol
         editableLabel.finalizeLabel(); // Finalizes label visual 
         
@@ -370,7 +374,7 @@ public class Transition extends Group implements simularity {
     // - Update visual state and register event handlers
     @Override
     public void select() {
-        System.out.println(LOG_DEBUG + "Transition select(): Selecting transition: " + this);
+        // System.out.println(LOG_DEBUG + "Transition select(): Selecting transition: " + this);
         if (State.getSelectedState() != null) State.getSelectedState().deselect();
         if (selectedTransition != null && selectedTransition != this) { selectedTransition.deselect(); }
         selectedTransition = this;
@@ -384,7 +388,7 @@ public class Transition extends Group implements simularity {
             // Setup listener for Enter key confirmation
             if(editableLabel.getEditor() != null) {
                 editableLabel.getEditor().setOnAction(event -> { 
-                    System.out.println(LOG_DEBUG + "Transition select(): Enter pressed on label editor.");
+                    // System.out.println(LOG_DEBUG + "Transition select(): Enter pressed on label editor.");
                     if(handleLabelEditComplete()) { 
                         // Successfully finalized on Enter - Optionally deselect, but maybe not?
                         // this.deselect(); // Let user click away instead?
@@ -401,24 +405,24 @@ public class Transition extends Group implements simularity {
     // - Validate symbol and update visual state
     @Override
     public void deselect() {
-        System.out.println(LOG_DEBUG + "Transition deselect(): Attempting deselection for: " + this);
+        // System.out.println(LOG_DEBUG + "Transition deselect(): Attempting deselection for: " + this);
 
         boolean finalizeSuccess = true;
         // Only attempt finalization if the editor is currently visible and part of the scene graph
         if (editableLabel != null && editableLabel.getEditor() != null &&
             editableLabel.getEditor().isVisible() && editableLabel.getScene() != null) 
         {
-             System.out.println(LOG_DEBUG + "Transition deselect(): Editor is visible, attempting finalize symbol...");
+             // System.out.println(LOG_DEBUG + "Transition deselect(): Editor is visible, attempting finalize symbol...");
              finalizeSuccess = handleLabelEditComplete();
         } else {
-            System.out.println(LOG_DEBUG + "Transition deselect(): Editor not visible or not ready, skipping finalize symbol attempt.");
+            // System.out.println(LOG_DEBUG + "Transition deselect(): Editor not visible or not ready, skipping finalize symbol attempt.");
         }
 
         if (finalizeSuccess) {
-            System.out.println(LOG_DEBUG + "Transition deselect(): Finalize successful or skipped, committing deselection.");
+            // System.out.println(LOG_DEBUG + "Transition deselect(): Finalize successful or skipped, committing deselection.");
             commitDeselection(); // Separate method for actual deselection steps
         } else {
-            System.out.println(LOG_WARN + "Transition deselect(): Finalize failed (invalid symbol), keeping selected/editing.");
+            // System.out.println(LOG_WARN + "Transition deselect(): Finalize failed (invalid symbol), keeping selected/editing.");
             // Keep selected, focus should have been requested by handleLabelEditComplete
             Platform.runLater(() -> {
                 if(editableLabel != null && editableLabel.getEditor() != null) {
@@ -522,7 +526,7 @@ public class Transition extends Group implements simularity {
     
     // - Commit the deselection visuals and state
     private void commitDeselection() {
-        System.out.println(LOG_DEBUG + "Transition commitDeselection(): Committing for: " + this.getSymbol());
+        // System.out.println(LOG_DEBUG + "Transition commitDeselection(): Committing for: " + this.getSymbol());
         if (curvedArrow != null) curvedArrow.deselect();
         deregisterControlPointDrag();
         if (editableLabel != null) {

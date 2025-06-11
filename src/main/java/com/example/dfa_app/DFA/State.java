@@ -42,9 +42,30 @@ public class State extends Group implements simularity {
         State.dfaInstance = dfa;
     }
 
+    // - Method to clear all state names from the static set
+    public static void clearAllStateNames() {
+        // if (dfaInstance != null && dfaInstance.getControllerInstance() != null) {
+        //     dfaInstance.getControllerInstance().log("Clearing all state names. Before clear: " + stateNames);
+        // }
+        stateNames.clear();
+        // if (dfaInstance != null && dfaInstance.getControllerInstance() != null) {
+        //     dfaInstance.getControllerInstance().log("After clear: " + stateNames);
+        // }
+    }
+
+    // - Method to reset the static ID counter
+    public static void resetIdCounter() {
+        idCounter = 0;
+    }
+
     // - Access currently selected state
     public static State getSelectedState() {
         return selectedState;
+    }
+
+    // - Set the currently selected state
+    public static void setSelectedState(State state) {
+        selectedState = state;
     }
 
     // - Instance fields for state properties and visuals
@@ -67,15 +88,16 @@ public class State extends Group implements simularity {
     private Application_Controler controllerInstance; // Reference to the controller for table updates
 
     // - Create a state with basic properties
-    public State(double centerX, double centerY, double radius, Color color, Application_Controler controller) {
+    public State(double centerX, double centerY, double radius, Color fillColor, Color strokeColor, double strokeWidth, Application_Controler controller) {
         this.id = idCounter++;
         setLayoutX(centerX);
         setLayoutY(centerY);
         this.controllerInstance = controller; // Store controller reference
 
         mainCircle = new Circle(0, 0, radius);
-        mainCircle.setFill(color);
-        mainCircle.setStroke(Color.BLACK);
+        mainCircle.setFill(fillColor);
+        mainCircle.setStroke(strokeColor);
+        mainCircle.setStrokeWidth(strokeWidth);
         mainCircle.setUserData(this);
 
         editableLabel = new EditableLabel();
@@ -94,10 +116,21 @@ public class State extends Group implements simularity {
         setLabelText(this.name); // Set initial text & position
     }
 
+    // Overloaded constructor for backward compatibility, uses default stroke
+    public State(double centerX, double centerY, double radius, Color color, Application_Controler controller) {
+        this(centerX, centerY, radius, color, Color.BLACK, 1.0, controller); // Default stroke
+    }
+
     // - Create a state with name and basic properties
-    public State(double centerX, double centerY, double radius, Color color, String name, Application_Controler controller) {
-        this(centerX, centerY, radius, color, controller); // Call the other constructor
+    // Overloaded constructor with name and all visual properties
+    public State(double centerX, double centerY, double radius, Color fillColor, Color strokeColor, double strokeWidth, String name, Application_Controler controller) {
+        this(centerX, centerY, radius, fillColor, strokeColor, strokeWidth, controller); // Call the main constructor
         setName(name); // Set the name using the validation logic
+    }
+
+    // Overloaded constructor with name, uses default stroke
+    public State(double centerX, double centerY, double radius, Color color, String name, Application_Controler controller) {
+        this(centerX, centerY, radius, color, Color.BLACK, 1.0, name, controller); // Default stroke
     }
 
     // - Register selection event listener
@@ -115,6 +148,9 @@ public class State extends Group implements simularity {
     // - Notifies DFA instance of name change
     public void setName(String newName) {
         if (isNullOrEmpty(newName)) {
+            // if (controllerInstance != null) {
+            //     controllerInstance.log("[State] Attempted to set empty state name. Current names: " + stateNames);
+            // }
             showAlert("Invalid State Name", "State name cannot be empty. Please choose a unique name.");
             Platform.runLater(editableLabel::startEditing);
             return;
@@ -127,6 +163,9 @@ public class State extends Group implements simularity {
         }
 
         if (stateNames.contains(newName)) {
+            // if (controllerInstance != null) {
+            //     controllerInstance.log("[State] Attempted to set duplicate state name: '" + newName + "'. Current names: " + stateNames);
+            // }
             showAlert("Duplicate State Name", "A state with the name '" + newName + "' already exists. Please choose a unique name.");
             Platform.runLater(editableLabel::startEditing);
             return;
@@ -134,9 +173,15 @@ public class State extends Group implements simularity {
         // - Remove old name and update
         if (!isNullOrEmpty(oldName)) {
             stateNames.remove(oldName);
+            // if (controllerInstance != null) {
+            //     controllerInstance.log("[State] Removed old state name: '" + oldName + "'. Current names after removal: " + stateNames);
+            // }
         }
         this.name = newName;
         stateNames.add(newName);
+        // if (controllerInstance != null) {
+        //     controllerInstance.log("[State] Added new state name: '" + newName + "'. All current names: " + stateNames);
+        // }
         setLabelText(newName);
 
         // - Notify DFA instance about the name change
@@ -186,9 +231,11 @@ public class State extends Group implements simularity {
 
     // - Update visibility of the accepting indicator
     private void updateAcceptingIndicatorVisuals() {
-        if (acceptingIndicator != null) {
-             acceptingIndicator.setVisible(this.accepting);
-        }
+        Platform.runLater(() -> {
+            if (acceptingIndicator != null) {
+                 acceptingIndicator.setVisible(this.accepting);
+            }
+        });
     }
 
     // - Create the visual indicator for the initial state (an arrow)
@@ -213,9 +260,11 @@ public class State extends Group implements simularity {
 
     // - Update visibility of the initial state indicator
     private void updateInitialIndicatorVisuals() {
-        if (initialIndicator != null) {
-            initialIndicator.setVisible(this.isInitial);
-        }
+        Platform.runLater(() -> {
+            if (initialIndicator != null) {
+                initialIndicator.setVisible(this.isInitial);
+            }
+        });
     }
 
     // - Remove a transition from this state
@@ -277,79 +326,83 @@ public class State extends Group implements simularity {
 
     // - Select this state (deselecting any previously selected state)
     public void select() {
-        if (selectedState != null && selectedState != this) {
-            selectedState.deselect();
-        }
-        selectedState = this;
-        wasJustDragged = false; // Reset flag on selection
-        mainCircle.setStroke(Color.BLUE);
-        ScaleTransition scaleUp = new ScaleTransition(Duration.millis(200), this);
-        scaleUp.setToX(1.1);
-        scaleUp.setToY(1.1);
-        scaleUp.play();
+        Platform.runLater(() -> {
+            if (selectedState != null && selectedState != this) {
+                selectedState.deselect();
+            }
+            selectedState = this;
+            wasJustDragged = false; // Reset flag on selection
+            mainCircle.setStroke(Color.BLUE);
+            ScaleTransition scaleUp = new ScaleTransition(Duration.millis(200), this);
+            scaleUp.setToX(1.1);
+            scaleUp.setToY(1.1);
+            scaleUp.play();
 
-        editableLabel.startEditing();
+            editableLabel.startEditing();
 
-        if (editableLabel.getEditor() != null) {
-            editableLabel.getEditor().setOnAction(event -> {
-                this.deselect(); 
-                event.consume();
+            if (editableLabel.getEditor() != null) {
+                editableLabel.getEditor().setOnAction(event -> {
+                    this.deselect(); 
+                    event.consume();
+                });
+            } else {
+                // System.err.println("Warning: Editor TextField not available immediately after startEditing in select()");
+            }
+
+            if (selectionListener != null) {
+                selectionListener.onSelected(this);
+            }
+
+            // --- Restore original press/drag/release handlers for movement & flag setting ---
+            this.setOnMousePressed(e -> {
+                if (e.getButton() == MouseButton.PRIMARY) {
+                    wasJustDragged = false; // Ensure flag is false when press starts
+                    dragDeltaX = e.getSceneX() - getLayoutX();
+                    dragDeltaY = e.getSceneY() - getLayoutY();
+                    requestFocus(); 
+                    // Request focus on editor after a short delay
+                    Platform.runLater(() -> {
+                        if (editableLabel.getEditor() != null) {
+                             editableLabel.getEditor().requestFocus();
+                         }
+                     });
+                    e.consume();
+                }
             });
-        } else {
-            // System.err.println("Warning: Editor TextField not available immediately after startEditing in select()");
-        }
 
-        if (selectionListener != null) {
-            selectionListener.onSelected(this);
-        }
+            this.setOnMouseDragged(e -> {
+                if (e.getButton() == MouseButton.PRIMARY) {
+                     double newX = e.getSceneX() - dragDeltaX;
+                     double newY = e.getSceneY() - dragDeltaY;
+                     moveState(newX, newY);
+                     // Transitions should update automatically via listeners added in Transition constructor
+                     e.consume();
+                }
+             });
 
-        // --- Restore original press/drag/release handlers for movement & flag setting ---
-        this.setOnMousePressed(e -> {
-            if (e.getButton() == MouseButton.PRIMARY) {
-                wasJustDragged = false; // Ensure flag is false when press starts
-                dragDeltaX = e.getSceneX() - getLayoutX();
-                dragDeltaY = e.getSceneY() - getLayoutY();
-                requestFocus(); 
-                // Request focus on editor after a short delay
-                Platform.runLater(() -> {
-                    if (editableLabel.getEditor() != null) {
-                         editableLabel.getEditor().requestFocus();
-                     }
-                 });
-                e.consume();
-            }
-        });
-
-        this.setOnMouseDragged(e -> {
-            if (e.getButton() == MouseButton.PRIMARY) {
-                 double newX = e.getSceneX() - dragDeltaX;
-                 double newY = e.getSceneY() - dragDeltaY;
-                 moveState(newX, newY);
-                 // Transitions should update automatically via listeners added in Transition constructor
-                 e.consume();
-            }
-         });
-
-        // Set flag on mouse release, reset it shortly after
-        this.setOnMouseReleased(e -> {
-             if (e.getButton() == MouseButton.PRIMARY) {
-                 wasJustDragged = true;
-                 // Reset the flag after the current event processing is done
-                 Platform.runLater(() -> {
-                     wasJustDragged = false;
-                 });
-                 e.consume(); 
-             }
+            // Set flag on mouse release, reset it shortly after
+            this.setOnMouseReleased(e -> {
+                 if (e.getButton() == MouseButton.PRIMARY) {
+                     wasJustDragged = true;
+                     // Reset the flag after the current event processing is done
+                     Platform.runLater(() -> {
+                         wasJustDragged = false;
+                     });
+                     e.consume(); 
+                 }
+            });
         });
     }
 
     // - Deselect this state, validating name first
     public void deselect() {
-        if (!finalizeName()) {
-            keepInSelectionMode();
-            return;
-        }
-        commitDeselection();
+        Platform.runLater(() -> {
+            if (!finalizeName()) {
+                keepInSelectionMode();
+                return;
+            }
+            commitDeselection();
+        });
     }
 
     // - Validate and save the current name
@@ -427,9 +480,10 @@ public class State extends Group implements simularity {
     // - Delete this state and its transitions
     public void deleteState() {
         // Notify DFA to handle removal and associated logic (e.g., updating initial state)
-        if (State.dfaInstance != null) {
-            State.dfaInstance.removeState(this);
-        }
+        // This is handled by DFA.rebuildDFAFromMinimized directly now.
+        // if (State.dfaInstance != null) {
+        //     State.dfaInstance.removeState(this);
+        // }
         // Remove from UI parent
         if (getParent() instanceof Pane) { // Use Pane instead of Group for more flexibility
             ((Pane)getParent()).getChildren().remove(this);
