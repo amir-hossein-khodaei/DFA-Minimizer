@@ -60,11 +60,7 @@
                   <Tooltip text="Choose or type the name for the state." />
                </tooltip>
             </Button>
-            <Button fx:id="newTransitionButton" styleClass="toolbar-button" text="New Transition">
-               <tooltip>
-                  <Tooltip text="Create a new transition between states" />
-               </tooltip>
-            </Button>
+            <Button fx:id="clearPageButton" styleClass="toolbar-button" text="Clear Page" />
          </HBox>
 
          <!-- Spacer -->

@@ -19,6 +19,7 @@ import javafx.scene.input.KeyCode;
 import javafx.event.ActionEvent;
 import javafx.scene.control.Alert.AlertType;
 import javafx.application.Platform;
+import javafx.stage.Window;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -36,6 +37,10 @@ import javafx.collections.ObservableList;
 
 import java.util.stream.Collectors;
 import java.util.Objects;
+import javafx.fxml.FXMLLoader;
+import javafx.scene.Parent;
+import javafx.scene.Scene;
+import javafx.stage.Stage;
 
 public class Application_Controler implements SelectionListener {
     
@@ -74,7 +79,7 @@ public class Application_Controler implements SelectionListener {
     @FXML
     private Button newStateButton;
     @FXML
-    private Button newTransitionButton;
+    private Button clearPageButton;
     @FXML
     private Button undoButton;
     @FXML
@@ -84,6 +89,7 @@ public class Application_Controler implements SelectionListener {
     private Transition currentTransition;
     private boolean waitingForSecondClick = false;
     private boolean isPlacingNewState = false; 
+    private AtomicReference<Runnable> placementLogicRef = new AtomicReference<>();
 
     public void log(String message) {
         if (logTextArea != null) {
@@ -101,10 +107,6 @@ public class Application_Controler implements SelectionListener {
     @FXML
     public void initialize() {
         
-        if (clearLogButton != null) {
-            clearLogButton.setOnAction(event -> handleClearLogButton());
-        }
-        
         dfa = new DFA(this);
 
         setupTransitionTable();
@@ -116,9 +118,21 @@ public class Application_Controler implements SelectionListener {
                 if (dfa != null) {
                     dfa.minimizeDFA(); 
                 } else {
-                    log("DFA model is null, cannot minimize.");
+                    System.out.println("DFA model is null, cannot minimize.");
                 }
             });
+        }
+
+        if (saveButton != null) {
+            saveButton.setOnAction(event -> handleSaveButton());
+        }
+
+        if (clearPageButton != null) {
+            clearPageButton.setOnAction(event -> handleClearPageButton());
+        }
+
+        if (newPageButton != null) {
+            newPageButton.setOnAction(event -> handleNewPageButton());
         }
 
         final AtomicReference<EventHandler<MouseEvent>> transitionMouseMoveHandlerRef = new AtomicReference<>();
@@ -145,6 +159,14 @@ public class Application_Controler implements SelectionListener {
                 pane.setOnMouseMoved(null); 
                 transitionMouseMoveHandlerRef.set(null);
 
+                // Deselect any currently selected state or transition before completing the new transition
+                if (State.getSelectedState() != null) {
+                    State.getSelectedState().deselect();
+                }
+                if (Transition.getSelectedTransition() != null) {
+                    Transition.getSelectedTransition().deselect();
+                }
+
                 if (clickedNode == pane) {
                     mouseEvent.consume();
                     return;
@@ -158,7 +180,7 @@ public class Application_Controler implements SelectionListener {
                 if (current instanceof State) {
                      targetState = (State) current;
                 } else {
-                    log("Target state not found for transition completion.");
+                    System.out.println("Target state not found for transition completion.");
                 }
 
                 if (currentTransition != null && targetState != null) {
@@ -198,6 +220,10 @@ public class Application_Controler implements SelectionListener {
                 }
 
                 if (clickedTransition != null) {
+                    // Deselect any currently selected state before selecting the transition
+                    if (State.getSelectedState() != null) {
+                        State.getSelectedState().deselect();
+                    }
                     clickedTransition.select(); 
                     mouseEvent.consume();
                     return;
@@ -222,12 +248,8 @@ public class Application_Controler implements SelectionListener {
 
             if (clickedNode != null && clickedNode.getUserData() instanceof State) {
                  State state = (State) clickedNode.getUserData();
-                 if (mouseEvent.getButton() == MouseButton.SECONDARY || mouseEvent.getButton() == MouseButton.PRIMARY) {
-                    if (currentlySelected == state && !currentlySelected.wasJustDragged() && mouseEvent.getButton() == MouseButton.PRIMARY) {
-                        currentlySelected.deselect();
-                    } else {
-                        state.select();
-                    }
+                 if (mouseEvent.getButton() == MouseButton.SECONDARY) {
+                    state.select();
                  }
                  mouseEvent.consume();
                  return;
@@ -299,79 +321,13 @@ public class Application_Controler implements SelectionListener {
                     break;
                 case N:
                     if (event.isControlDown()) {
-                        if (isPlacingNewState) {
-                            return;
-                        }
-
-                        isPlacingNewState = true; 
-
-                        State newState = new State(-50, -50, 30, Color.WHITE, Color.BLACK, 1.0, this);
-                        newState.setSelectionListener(this);
-                        pane.getChildren().add(newState);
-                        newState.select(); 
-
-                        mouseMoveHandlerRef.set(moveEvent -> {
-                            newState.moveState(moveEvent.getX(), moveEvent.getY());
-                            moveEvent.consume();
-                        });
-                        pane.setOnMouseMoved(mouseMoveHandlerRef.get());
-
-                        final AtomicReference<Runnable> placementLogicRef = new AtomicReference<>();
-                        placementLogicRef.set(() -> {
-                            pane.setOnMouseMoved(null);
-                            pane.setOnMouseClicked(null);
-                            if (newState.getEditableLabel().getEditor() != null) {
-                                newState.getEditableLabel().getEditor().setOnAction(null);
-                            }
-
-                            if (isOverlapping(newState)) {
-                                log("State placement failed: Overlap detected.");
-                                showOverlapError();
-                                pane.getChildren().remove(newState);
-                                isPlacingNewState = false; 
-                                return;
-                            }
-
-                            newState.deselect(); 
-
-                            if (State.getSelectedState() == newState) {
-                                secondEnterHandlerRef.set(actionEvent -> {
-                                    placementLogicRef.get().run();
-                                    actionEvent.consume();
-                                });
-                                if (newState.getEditableLabel().getEditor() != null) {
-                                     newState.getEditableLabel().getEditor().setOnAction(secondEnterHandlerRef.get());
-                                }
-                                secondClickHandlerRef.set(mouseEvent -> {
-                                    if (mouseEvent.getButton() == MouseButton.PRIMARY) {
-                                        placementLogicRef.get().run();
-                                        mouseEvent.consume();
-                                    }
-                                });
-                                pane.setOnMouseClicked(secondClickHandlerRef.get());
-                            } else {
-                                dfa.addState(newState); 
-                                updateTransitionTable(); 
-                                isPlacingNewState = false; 
-                            }
-                        });
-
-                        enterPlacementHandlerRef.set(actionEvent -> {
-                             placementLogicRef.get().run();
-                             actionEvent.consume();
-                        });
-                         if (newState.getEditableLabel().getEditor() != null) {
-                              newState.getEditableLabel().getEditor().setOnAction(enterPlacementHandlerRef.get());
-                         }
-
-                        firstClickHandlerRef.set(mouseEvent -> {
-                            if (mouseEvent.getButton() == MouseButton.PRIMARY) {
-                                placementLogicRef.get().run();
-                                mouseEvent.consume();
-                            }
-                        });
-                        pane.setOnMouseClicked(firstClickHandlerRef.get());
-
+                        handleNewStateAction();
+                        event.consume();
+                    }
+                    break;
+                case ENTER:
+                    if (isPlacingNewState) {
+                        placementLogicRef.get().run();
                         event.consume();
                     }
                     break;
@@ -400,6 +356,10 @@ public class Application_Controler implements SelectionListener {
         transitionNameCombo.focusedProperty().addListener((obs, oldVal, newVal) -> {
              if (!newVal) { handleTransitionNameChange(); }
          });
+
+        if (newStateButton != null) {
+            newStateButton.setOnAction(event -> handleNewStateAction());
+        }
     }
 
     private void buildDFAFromPane() {
@@ -429,7 +389,7 @@ public class Application_Controler implements SelectionListener {
                 transitionsMap.put(s, transMap);
             }
         }
-        log("Calling dfa.configureDFA() with extracted states, alphabet, initial/accepting states, and transitions.");
+        System.out.println("Calling dfa.configureDFA() with extracted states, alphabet, initial/accepting states, and transitions.");
         dfa.configureDFA(stateList, alphabet, initialState, acceptingStates, transitionsMap);
     }
 
@@ -465,11 +425,17 @@ public class Application_Controler implements SelectionListener {
     public void onSelected(Object obj) {
         if (obj instanceof State) {
             State selected = (State) obj;
-            updateStateSettingsTab(); 
-            clearTransitionSettingsTab(); 
+            if (Transition.getSelectedTransition() != null && Transition.getSelectedTransition() != obj) {
+                Transition.getSelectedTransition().deselect();
+            }
+            updateStateSettingsTab();
+            clearTransitionSettingsTab();
             TabPane.getSelectionModel().select(stateSettingsTab);
         } else if (obj instanceof Transition) { 
              Transition selected = (Transition) obj;
+             if (State.getSelectedState() != null && State.getSelectedState() != obj) {
+                 State.getSelectedState().deselect();
+             }
              updateTransitionSettingsTab(selected); 
              clearStateSettingsTab(); 
              TabPane.getSelectionModel().select(transitionSettingsTab);
@@ -728,11 +694,120 @@ public class Application_Controler implements SelectionListener {
         updateUIComponents(); 
     }
 
-    public void setLogTextArea(TextArea logTextArea) {
-        this.logTextArea = logTextArea;
-    }
-
     public Pane getPane() {
         return pane;
+    }
+
+    public void handleSaveButton() {
+        if (dfa != null) {
+            Window ownerWindow = pane.getScene().getWindow();
+            DFASerializer.saveDFA(dfa, ownerWindow);
+            System.out.println("DFA saved successfully.");
+        } else {
+            System.out.println("DFA model is null, cannot save.");
+        }
+    }
+
+    private void handleNewStateAction() {
+        if (isPlacingNewState) {
+            return;
+        }
+
+        isPlacingNewState = true; 
+
+        State newState = new State(-50, -50, 30, Color.WHITE, Color.BLACK, 1.0, this);
+        newState.setSelectionListener(this);
+        pane.getChildren().add(newState);
+        newState.select();
+
+        AtomicReference<EventHandler<MouseEvent>> mouseMoveHandlerRef = new AtomicReference<>();
+        mouseMoveHandlerRef.set(moveEvent -> {
+            newState.moveState(moveEvent.getX(), moveEvent.getY());
+            moveEvent.consume();
+        });
+        pane.setOnMouseMoved(mouseMoveHandlerRef.get());
+
+        placementLogicRef.set(() -> {
+            pane.setOnMouseMoved(null);
+            pane.setOnMouseClicked(null);
+            if (newState.getEditableLabel().getEditor() != null) {
+                newState.getEditableLabel().getEditor().setOnAction(null);
+            }
+
+            if (isOverlapping(newState)) {
+                System.out.println("State placement failed: Overlap detected.");
+                showOverlapError();
+                pane.getChildren().remove(newState);
+                isPlacingNewState = false; 
+                return;
+            }
+
+            if (State.getSelectedState() != null) {
+                State.getSelectedState().deselect();
+            }
+            if (Transition.getSelectedTransition() != null) {
+                Transition.getSelectedTransition().deselect();
+            }
+
+            newState.deselect(); 
+
+            dfa.addState(newState); 
+            updateTransitionTable(); 
+            isPlacingNewState = false; 
+        });
+
+        if (newState.getEditableLabel().getEditor() != null) {
+            newState.getEditableLabel().getEditor().setOnKeyPressed(keyEvent -> {
+                if (keyEvent.getCode() == KeyCode.ENTER) {
+                    placementLogicRef.get().run();
+                    keyEvent.consume();
+                }
+            });
+        }
+
+        AtomicReference<EventHandler<MouseEvent>> firstClickHandlerRef = new AtomicReference<>();
+        firstClickHandlerRef.set(mouseEvent -> {
+            if (mouseEvent.getButton() == MouseButton.PRIMARY) {
+                placementLogicRef.get().run();
+                mouseEvent.consume();
+            }
+        });
+        pane.setOnMouseClicked(firstClickHandlerRef.get());
+
+        if (newState.getEditableLabel().getEditor() != null) {
+            newState.getEditableLabel().getEditor().setOnAction(actionEvent -> {
+                placementLogicRef.get().run();
+                actionEvent.consume();
+            });
+        }
+    }
+
+    private void handleClearPageButton() {
+        dfa.clear();
+        pane.getChildren().clear();
+        updateUIComponents();
+        System.out.println("Page cleared.");
+    }
+
+    private void handleNewPageButton() {
+        try {
+            FXMLLoader fxmlLoader = new FXMLLoader(getClass().getResource("Main_DFA.fxml"));
+            Parent root = fxmlLoader.load();
+            Application_Controler newController = fxmlLoader.getController();
+            newController.setLogTextArea(new TextArea()); // Pass a new TextArea for the new window
+
+            Stage stage = new Stage();
+            stage.setTitle("DFA Application - New Page");
+            stage.setScene(new Scene(root, 1280, 720));
+            stage.show();
+            System.out.println("Opened new DFA window.");
+        } catch (Exception e) {
+            System.err.println("Failed to open new window: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    public void setLogTextArea(TextArea logTextArea) {
+        this.logTextArea = logTextArea;
     }
 }
