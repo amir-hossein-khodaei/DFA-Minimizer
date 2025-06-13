@@ -37,7 +37,7 @@ This application allows users to:
 #### From GitHub Releases (Recommended)
 
 1.  Go to the [Releases page](https://github.com/Amkhodaei83/DFA/releases) of this repository.
-2.  Download the latest `DFA_app-X.Y-SNAPSHOT.jar` file (replace `X.Y` with the actual version number).
+2.  Download the latest `DFA_app-X.Y-SNAPSHOT.jar` file .
 3.  Run the application using the command line:
     ```bash
     java -jar DFA_app-X.Y-SNAPSHOT.jar
@@ -108,19 +108,7 @@ The application follows the Model-View-Controller (MVC) design pattern:
 
 ## Contributing
 
-Contributions are welcome! To contribute, please follow these steps:
-
-1.  Fork the repository.
-2.  Create a feature branch: `git checkout -b feature/amazing-feature`
-3.  Commit your changes: `git commit -m 'Add some amazing feature'`
-4.  Push to the branch: `git push origin feature/amazing-feature`
-5.  Open a Pull Request.
-
-### Development Guidelines
-
--   Maintain the existing code style and naming conventions.
--   Add Javadoc comments for complex algorithms or public methods.
--   Ensure new features are well-documented in the README.
+Contributions are welcome!
 
 ## Future Enhancements
 
