@@ -37,12 +37,9 @@ This application allows users to:
 #### From GitHub Releases (Recommended)
 
 1.  Go to the [Releases page](https://github.com/Amkhodaei83/DFA/releases) of this repository.
-2.  Download the latest `DFA_app-X.Y-SNAPSHOT.jar` file .
-3.  Run the application using the command line:
-    ```bash
-    java -jar DFA_app-X.Y-SNAPSHOT.jar
-    ```
-    *Note: Replace `X.Y` with the actual version number of the downloaded JAR file.*
+2.  Download the latest `DFA_app.zip` file.
+3.  extract the file.
+4.  run the `run.bat` file.
 
 #### Building and Running from Source
 
