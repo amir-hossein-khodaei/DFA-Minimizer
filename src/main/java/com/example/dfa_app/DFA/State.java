@@ -34,7 +34,7 @@ public class State extends Group implements simularity {
     // - Static tracking for state selection and naming
     private static State selectedState = null;
     private static long idCounter = 0;
-    private static final Set<String> stateNames = new HashSet<>();
+    public static final Set<String> stateNames = new HashSet<>();
     private static DFA dfaInstance; // Static reference to the DFA instance
 
     // - Method to set the DFA instance for all states
@@ -307,6 +307,26 @@ public class State extends Group implements simularity {
                 .findFirst().orElse(null);
     }
 
+    // - Clears all transitions associated with this state (visual objects are still on pane)
+    public void clearTransitions() {
+        this.transitions.clear();
+    }
+
+    // - Removes transitions from this state that point to a specific target state
+    // - Collects the removed visual transition objects into the provided list
+    public void removeTransitionsToState(State targetState, List<Transition> collectedTransitions) {
+        // Collect transitions that point to targetState and remove them from this state's list
+        List<Transition> removed = new ArrayList<>();
+        this.transitions.removeIf(t -> {
+            boolean matches = Objects.equals(t.getNextState(), targetState);
+            if (matches) {
+                removed.add(t);
+            }
+            return matches;
+        });
+        collectedTransitions.addAll(removed);
+    }
+
     // - Move state to new position
     public void moveState(double newX, double newY) {
         setLayoutX(newX);
@@ -479,21 +499,15 @@ public class State extends Group implements simularity {
 
     // - Delete this state and its transitions
     public void deleteState() {
-        // Notify DFA to handle removal and associated logic (e.g., updating initial state)
-        // This is handled by DFA.rebuildDFAFromMinimized directly now.
-        // if (State.dfaInstance != null) {
-        //     State.dfaInstance.removeState(this);
-        // }
-        // Remove from UI parent
-        if (getParent() instanceof Pane) { // Use Pane instead of Group for more flexibility
-            ((Pane)getParent()).getChildren().remove(this);
+        // Deselect this state first to update UI before removal
+        deselect(); // This will also finalize name and clear settings tab if selected
+
+        // Notify DFA to handle removal from model and UI (including associated transitions)
+        if (State.dfaInstance != null) {
+            State.dfaInstance.removeState(this);
         }
-        // Remove name from static set
-        if (!isNullOrEmpty(name)) {
-            stateNames.remove(name);
-        }
-        // Clean up listeners on transitions (if any were added here)
-        // Transitions should ideally remove themselves if their states are deleted
+        // UI removal (from pane) and static name set removal are now handled by DFA.removeState()
+        // No need for direct pane.getChildren().remove(this) or stateNames.remove(name) here.
     }
 
     // - Update the label text and position

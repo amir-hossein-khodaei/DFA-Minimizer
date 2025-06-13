@@ -25,7 +25,7 @@
 <BorderPane fx:id="BorderPane" xmlns="http://javafx.com/javafx/23.0.1" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.example.dfa_app.Application_Controler">
    <!-- Reference to external CSS file -->
    <stylesheets>
-      <URL value="@styles.css" />
+      <URL value="@styles2.css" />
    </stylesheets>
 
    <!-- Top Toolbar -->

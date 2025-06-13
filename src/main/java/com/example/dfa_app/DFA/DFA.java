@@ -1,15 +1,11 @@
 package com.example.dfa_app.DFA;
 
-import javafx.scene.layout.Pane;
+import com.example.dfa_app.Application_Controler;
+import javafx.application.Platform;
 import javafx.scene.paint.Color;
+
 import java.util.*;
 import java.util.stream.Collectors;
-import java.util.StringJoiner;
-import javafx.application.Platform;
-
-import com.example.dfa_app.Application_Controler;
-
-
 
 public class DFA {
     private Set<State> states;
@@ -17,14 +13,13 @@ public class DFA {
     private State initialState;
     private Set<State> acceptingStates;
     private Map<State, Map<String, State>> transitions;
-    private Pane pane;
-    private Application_Controler controllerInstance;
+    private final Application_Controler controllerInstance;
 
     public DFA(Application_Controler controller) {
-        states = new HashSet<>();
-        alphabet = new HashSet<>();
-        acceptingStates = new HashSet<>();
-        transitions = new HashMap<>();
+        this.states = new HashSet<>();
+        this.alphabet = new HashSet<>();
+        this.acceptingStates = new HashSet<>();
+        this.transitions = new HashMap<>();
         this.controllerInstance = controller;
         State.setDFAInstance(this);
     }
@@ -33,14 +28,11 @@ public class DFA {
         return controllerInstance;
     }
 
-
     public Set<State> getStates() {
-
         return Collections.unmodifiableSet(this.states);
     }
 
     public Set<String> getAlphabet() {
-
         return Collections.unmodifiableSet(this.alphabet);
     }
 
@@ -49,7 +41,6 @@ public class DFA {
     }
 
     public Set<State> getAcceptingStates() {
-
         return Collections.unmodifiableSet(this.acceptingStates);
     }
 
@@ -57,9 +48,13 @@ public class DFA {
         return Collections.unmodifiableMap(this.transitions);
     }
 
-
     public void addState(State state) {
-        if (state != null && this.states.add(state)) {
+        if (state == null) {
+            return;
+        }
+
+        boolean isNewState = this.states.add(state);
+        if (isNewState) {
             if (this.states.size() == 1) {
                 setInitialState(state);
             }
@@ -69,16 +64,52 @@ public class DFA {
         }
     }
 
-
     public void removeState(State state) {
-        if (state != null && this.states.remove(state)) {
+        if (state == null) {
+            return;
+        }
+
+        // Remove state from the general set of states
+        boolean wasRemoved = this.states.remove(state);
+        if (wasRemoved) {
+            // Update initial state if the removed state was initial
             if (state.equals(this.initialState)) {
                 setInitialState(null);
             }
+            // Remove from accepting states if it was an accepting state
             this.acceptingStates.remove(state);
+
+            // Remove all outgoing transitions from the removed state
+            this.transitions.remove(state);
+
+            // Collect all visual transitions that need to be removed from the pane
+            List<Transition> transitionsToRemoveFromPane = new ArrayList<>();
+
+            // Remove all incoming transitions to the removed state
             for (State s : this.states) {
-                s.removeTransition(null, state);
+                s.removeTransitionsToState(state, transitionsToRemoveFromPane);
             }
+            // Also remove outgoing transitions from the state itself visually
+            state.getTransitions().forEach(transitionsToRemoveFromPane::add);
+            // Clear state's internal transition list as they are now handled/removed
+            state.clearTransitions();
+
+            // Remove the state from the UI pane
+            if (controllerInstance != null && controllerInstance.getPane() != null) {
+                controllerInstance.getPane().getChildren().remove(state);
+
+                // Remove all collected visual transitions from the pane
+                for (Transition t : transitionsToRemoveFromPane) {
+                    controllerInstance.deleteTransition(t); // Use the controller's method to ensure proper cleanup
+                }
+            }
+
+            // Remove name from static set in State class
+            if (!state.getName().isEmpty()) { // Ensure name is not empty before removal
+                State.stateNames.remove(state.getName());
+            }
+
+            // Update UI components after all removals
             if (controllerInstance != null) {
                 controllerInstance.updateUIComponents();
             }
@@ -86,121 +117,136 @@ public class DFA {
     }
 
     public void addSymbol(String symbol) {
-        if (symbol != null && !symbol.trim().isEmpty()) {
-            if (!"?".equals(symbol.trim())) {
-               if (this.alphabet.add(symbol.trim())) {
-                   if (controllerInstance != null) {
+        if (symbol == null || symbol.trim().isEmpty() || "?".equals(symbol.trim())) {
+            return;
+        }
 
+        String trimmedSymbol = symbol.trim();
+        boolean isNewSymbol = this.alphabet.add(trimmedSymbol);
 
-                        controllerInstance.updateTransitionTable();
-                   }
-               }
-            }
+        if (isNewSymbol && controllerInstance != null) {
+            controllerInstance.updateTransitionTable();
         }
     }
 
-
-    public void setInitialState(State newState) {
-       if (newState != null && !this.states.contains(newState)) {
-           // System.err.println("[ERROR] Attempted to set a non-member state as initial: " + newState.getName()); // Removed
-           // Optionally, handle this as an internal log or throw an exception
-           return;
-       }
-
-       State oldInitialState = this.initialState;
-
-       if (Objects.equals(oldInitialState, newState)) {
-           return;
-       }
-
-
-       if (oldInitialState != null) {
-           oldInitialState.setAsInitial(false);
-       }
-
-
-       this.initialState = newState;
-       if (this.initialState != null) {
-           this.initialState.setAsInitial(true);
-       }
-
-
-       if (controllerInstance != null) {
-           controllerInstance.handleInitialStateChange(oldInitialState, newState);
-           controllerInstance.updateUIComponents();
-       }
-    }
-
-   public void addAcceptingState(State state) {
-       if (this.states.contains(state)) {
-           if (this.acceptingStates.add(state)) {
-               state.setAccepting(true);
-               if (controllerInstance != null) {
-                   controllerInstance.handleAcceptingStateChange(state);
-                   controllerInstance.updateUIComponents();
-               }
-           }
-       }
-   }
-
-   public void removeAcceptingState(State state) {
-       if (this.acceptingStates.remove(state)) {
-           state.setAccepting(false);
-           if (controllerInstance != null) {
-               controllerInstance.handleAcceptingStateChange(state);
-               controllerInstance.updateUIComponents();
-           }
-       }
-   }
-
-
-   public void stateNameChanged(State state, String oldName, String newName) {
-       if (controllerInstance != null) {
-
-           controllerInstance.updateUIComponents();
-       }
-   }
-
-
-
-    public String getDFAData() {
-        StringBuilder sb = new StringBuilder();
-
-        sb.append("----- DFA Data -----\n");
-        sb.append("States:\n");
-        for (State state : states) {
-            sb.append("  ");
-            sb.append(state.getName());
-            if (state.equals(initialState)) {
-                sb.append(" [initial]");
-            }
-            if (state.isAccepting()) {
-                sb.append(" [accepting]");
-            }
-            sb.append("\n");
+    public void setInitialState(State newInitialState) {
+        if (newInitialState != null && !this.states.contains(newInitialState)) {
+            return;
         }
 
-        sb.append("\nAlphabet: ").append(alphabet).append("\n\n");
+        State oldInitialState = this.initialState;
+        if (Objects.equals(oldInitialState, newInitialState)) {
+            return;
+        }
 
-        sb.append("Transitions:\n");
-        for (State state : states) {
-            for (Transition t : state.getTransitions()) {
+        if (oldInitialState != null) {
+            oldInitialState.setAsInitial(false);
+        }
 
-                if (t.getSymbol() != null && t.getNextState() != null) {
-                    sb.append(String.format("  δ(%s, %s) = %s\n", state.getName(), t.getSymbol(), t.getNextState().getName()));
+        this.initialState = newInitialState;
+        if (this.initialState != null) {
+            this.initialState.setAsInitial(true);
+        }
+
+        if (controllerInstance != null) {
+            controllerInstance.handleInitialStateChange(oldInitialState, newInitialState);
+            controllerInstance.updateUIComponents();
+        }
+    }
+
+    public void addAcceptingState(State state) {
+        if (state != null && this.states.contains(state)) {
+            if (this.acceptingStates.add(state)) {
+                state.setAccepting(true);
+                if (controllerInstance != null) {
+                    controllerInstance.handleAcceptingStateChange(state);
+                    controllerInstance.updateUIComponents();
                 }
             }
         }
-        sb.append("--------------------");
-        return sb.toString();
     }
 
+    public void removeAcceptingState(State state) {
+        if (state != null) {
+            if (this.acceptingStates.remove(state)) {
+                state.setAccepting(false);
+                if (controllerInstance != null) {
+                    controllerInstance.handleAcceptingStateChange(state);
+                    controllerInstance.updateUIComponents();
+                }
+            }
+        }
+    }
 
-    public void configureDFA(List<State> stateList,
-                             Set<String> alphabet,
-                             State initialState,
-                             Set<State> acceptingStates,
-                             Map<State, Map<String, State>> transitions) {
+    public void stateNameChanged(State state, String oldName, String newName) {
+        if (controllerInstance != null) {
+            controllerInstance.updateUIComponents();
+        }
+    }
+
+    public void addOrUpdateTransition(State fromState, String symbol, State toState) {
+        if (fromState == null || toState == null || symbol == null || symbol.isEmpty()) {
+            return;
+        }
+
+        this.addSymbol(symbol);
+        this.transitions.computeIfAbsent(fromState, k -> new HashMap<>()).put(symbol, toState);
+
+        if (controllerInstance != null) {
+            controllerInstance.updateTransitionTable();
+        }
+    }
+
+    public void clear() {
+        this.states.clear();
+        this.alphabet.clear();
+        this.initialState = null;
+        this.acceptingStates.clear();
+        this.transitions.clear();
+
+        State.clearAllStateNames();
+        State.resetIdCounter();
+        State.setSelectedState(null);
+    }
+
+    public void log(String message) {
+        if (controllerInstance != null) {
+            controllerInstance.log(message);
+        }
+    }
+
+    // --- Configuration and Utility Methods ---
+
+    public String toDotString() {
+        StringBuilder dot = new StringBuilder();
+        dot.append("digraph DFA {\n");
+        dot.append("    rankdir=LR;\n");
+        dot.append("    node [shape = circle];\n");
+        if (initialState != null) {
+            dot.append("    start [shape = point, style = invis];\n");
+            dot.append("    start -> \"").append(initialState.getName()).append("\";\n");
+        }
+        for (State state : states) {
+            dot.append("    \"").append(state.getName()).append("\"");
+            if (state.isAccepting()) {
+                dot.append(" [shape = doublecircle]");
+            }
+            dot.append(";\n");
+        }
+        for (State state : states) {
+            for (Transition transition : state.getTransitions()) {
+                if (transition.getNextState() != null) {
+                    dot.append("    \"").append(state.getName()).append("\" -> \"")
+                       .append(transition.getNextState().getName()).append("\" [label = \"")
+                       .append(transition.getSymbol()).append("\"];\n");
+                }
+            }
+        }
+        dot.append("}\n");
+        return dot.toString();
+    }
+
+    public void configureDFA(List<State> stateList, Set<String> alphabet, State initialState, Set<State> acceptingStates, Map<State, Map<String, State>> transitions) {
         this.states = new HashSet<>(stateList);
         this.alphabet = new HashSet<>(alphabet);
         this.initialState = initialState;
@@ -215,23 +261,15 @@ public class DFA {
                 }
             }
         }
-
         if (controllerInstance != null) {
-            System.out.println("DFA configured with " + states.size() + " states, " + alphabet.size() + " symbols.");
+            log("DFA configured with " + states.size() + " states, " + alphabet.size() + " symbols.");
             controllerInstance.updateUIComponents();
         }
     }
 
-
-
-    public void configureDFA(List<String> stateNames,
-                             Set<String> alphabet,
-                             String initialStateName,
-                             List<String> acceptingStateNames,
-                             Map<String, Map<String, String>> transitionsData) {
+    public void configureDFA(List<String> stateNames, Set<String> alphabet, String initialStateName, List<String> acceptingStateNames, Map<String, Map<String, String>> transitionsData) {
         Map<String, State> stateMap = new HashMap<>();
         for (String name : stateNames) {
-
             State s = new State(50, 50, 15, Color.LIGHTGRAY, Color.BLACK, 1.0, name, this.controllerInstance);
             stateMap.put(name, s);
             states.add(s);
@@ -245,94 +283,40 @@ public class DFA {
                 acceptingStates.add(s);
             }
         }
-
         for (Map.Entry<String, Map<String, String>> entry : transitionsData.entrySet()) {
-            String stateName = entry.getKey();
-            State fromState = stateMap.get(stateName);
+            State fromState = stateMap.get(entry.getKey());
             if (fromState == null) continue;
-            Map<String, String> transForState = entry.getValue();
-            for (Map.Entry<String, String> t : transForState.entrySet()) {
-                String symbol = t.getKey();
-                String nextStateName = t.getValue();
-                State nextState = stateMap.get(nextStateName);
+            for (Map.Entry<String, String> t : entry.getValue().entrySet()) {
+                State nextState = stateMap.get(t.getValue());
                 if (nextState != null) {
-                    fromState.addTransitionDirect(symbol, nextState);
+                    fromState.addTransitionDirect(t.getKey(), nextState);
                 }
             }
         }
-
-
         if (controllerInstance != null) {
             controllerInstance.updateTransitionTable();
         }
     }
 
+    // =================================================================================
+    // =============== DFA MINIMIZATION LOGIC AND HELPER CLASSES =======================
+    // =================================================================================
 
-    public void removeUnreachableStates() {
-        Set<State> reachableStates = new HashSet<>();
-        Queue<State> queue = new LinkedList<>();
-
-        if (initialState != null) {
-             reachableStates.add(initialState);
-             queue.add(initialState);
-        } else {
-            states.clear();
-            acceptingStates.clear();
-             if (controllerInstance != null) {
-                controllerInstance.updateTransitionTable();
-            }
-            return;
-        }
-
-        while (!queue.isEmpty()) {
-            State current = queue.poll();
-            for (Transition t : current.getTransitions()) {
-                State nextState = (State) t.getNextState();
-                if (nextState != null && reachableStates.add(nextState)) {
-                    queue.add(nextState);
-                }
-            }
-        }
-
-        states.retainAll(reachableStates);
-        acceptingStates.retainAll(reachableStates);
-
-        if (controllerInstance != null) {
-            controllerInstance.updateTransitionTable();
-        }
-    }
-
-
-    /**
-     * Represents a pair of states (q_i, q_j).
-     * We make sure the states are always in the same order (like alphabetical)
-     * so that the pair (Q1, Q0) is treated exactly the same as (Q0, Q1).
-     */
     static class Pair {
         String state1, state2;
         public Pair(String s1, String s2) {
-            if (s1.compareTo(s2) < 0) {
-                this.state1 = s1; this.state2 = s2;
-            } else {
-                this.state1 = s2; this.state2 = s1;
-            }
+            if (s1.compareTo(s2) < 0) { this.state1 = s1; this.state2 = s2; }
+            else { this.state1 = s2; this.state2 = s1; }
         }
         @Override public boolean equals(Object o) {
             if (this == o) return true;
             if (o == null || getClass() != o.getClass()) return false;
-            Pair p = (Pair) o;
-            return state1.equals(p.state1) && state2.equals(p.state2);
+            return state1.equals(((Pair)o).state1) && state2.equals(((Pair)o).state2);
         }
         @Override public int hashCode() { return Objects.hash(state1, state2); }
         @Override public String toString() { return "(" + state1 + ", " + state2 + ")"; }
     }
 
-    /**
-     * A helper data structure to group states together.
-     * Think of it as connecting dots. If we say union(A, B) and union(B, C),
-     * this structure knows that {A, B, C} all belong to the same group.
-     * This is perfect for forming our new merged states.
-     */
     static class UnionFind {
         private final Map<String, String> parent;
         public UnionFind(Set<String> states) {
@@ -360,23 +344,18 @@ public class DFA {
         }
     }
 
-
     public void minimizeDFA() {
         if (initialState == null) {
-            System.out.println("[ERROR] Cannot minimize DFA: No initial state defined.");
+            log("[ERROR] Cannot minimize DFA: No initial state defined.");
             return;
         }
-
 
         State.clearAllStateNames();
         State.resetIdCounter();
         State.setSelectedState(null);
 
-        System.out.println("Starting DFA Minimization...");
-
-
-        Set<State> originalDFAStatesSnapshot = new HashSet<>(states);
-        Map<String, Map<String, String>> originalTransitionsDataSnapshot = new HashMap<>();
+        Set<State> originalStatesSnapshot = new HashSet<>(states);
+        Map<String, Map<String, String>> transitionsSnapshot = new HashMap<>();
         for (State s : states) {
             Map<String, String> stateTransitions = new HashMap<>();
             for (String symbol : alphabet) {
@@ -385,177 +364,128 @@ public class DFA {
                     stateTransitions.put(symbol, t.getNextState().getName());
                 }
             }
-            originalTransitionsDataSnapshot.put(s.getName(), stateTransitions);
+            transitionsSnapshot.put(s.getName(), stateTransitions);
         }
 
+        Set<String> allStateNames = originalStatesSnapshot.stream().map(State::getName).collect(Collectors.toSet());
+        List<String> alphabetList = new ArrayList<>(alphabet);
+        String initialName = initialState.getName();
+        Set<String> acceptingNames = acceptingStates.stream().map(State::getName).collect(Collectors.toSet());
 
-        Set<String> currentStatesNames = originalDFAStatesSnapshot.stream().map(State::getName).collect(Collectors.toSet());
-        List<String> currentAlphabetList = new ArrayList<>(alphabet);
-        String currentInitialStateName = initialState.getName();
-        Set<String> currentAcceptingStateNames = acceptingStates.stream().map(State::getName).collect(Collectors.toSet());
+        log("Starting DFA Minimization...");
+        log("> States:\n" + allStateNames);
+        log("Alphabet:\n" + alphabetList);
+        log("> start:\n" + initialName);
+        log("Accepting:\n" + acceptingNames);
 
+        // --- PHASE 1: Removing Unreachable States ---
+        log("\nPHASE 1: Unreachable States");
+        Set<String> reachableNames = findReachableStates(initialName, transitionsSnapshot);
+        Set<String> unreachableNames = new HashSet<>(allStateNames);
+        unreachableNames.removeAll(reachableNames);
 
-        Map<String, Map<String, String>> currentTransitionsData = originalTransitionsDataSnapshot;
+        if (unreachableNames.isEmpty()) {
+            log("> All states are reachable.");
+        } else {
+            log("> Removed unreachable state(s):\n" + unreachableNames);
+        }
+        
+        Set<String> stateNames = reachableNames;
+        acceptingNames.retainAll(reachableNames);
 
-
-        System.out.println("--- PHASE 1: Finding and Removing Unreachable States ---");
-        Set<String> reachableStatesNames = findReachableStates(currentInitialStateName, currentTransitionsData);
-        Set<String> unreachableStatesNames = new HashSet<>(currentStatesNames);
-        unreachableStatesNames.removeAll(reachableStatesNames);
-
-        currentStatesNames = reachableStatesNames;
-        currentAcceptingStateNames.retainAll(reachableStatesNames);
-        Map<String, Map<String, String>> filteredTransitionsData = new HashMap<>();
-        for (String stateName : currentStatesNames) {
-            Map<String, String> originalTransitions = currentTransitionsData.get(stateName);
-            if (originalTransitions != null) {
-
-                Map<String, String> filtered = originalTransitions.entrySet().stream()
-                    .filter(entry -> reachableStatesNames.contains(entry.getValue()))
-                    .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
-                filteredTransitionsData.put(stateName, filtered);
+        // Explicitly filter transitionsSnapshot to only include reachable states
+        Map<String, Map<String, String>> filteredTransitionsSnapshot = new HashMap<>();
+        for (Map.Entry<String, Map<String, String>> entry : transitionsSnapshot.entrySet()) {
+            String fromStateName = entry.getKey();
+            if (reachableNames.contains(fromStateName)) {
+                Map<String, String> originalInnerMap = entry.getValue();
+                Map<String, String> newInnerMap = new HashMap<>();
+                for (Map.Entry<String, String> innerEntry : originalInnerMap.entrySet()) {
+                    String symbol = innerEntry.getKey();
+                    String targetStateName = innerEntry.getValue();
+                    if (targetStateName != null && reachableNames.contains(targetStateName)) {
+                        newInnerMap.put(symbol, targetStateName);
+                    }
+                }
+                if (!newInnerMap.isEmpty() || !originalInnerMap.isEmpty()) { // Keep states with or without outgoing transitions
+                    filteredTransitionsSnapshot.put(fromStateName, newInnerMap);
+                }
             }
         }
-        System.out.println("  Unreachable states removed: " + unreachableStatesNames);
-        System.out.println("  Reachable states: " + currentStatesNames);
+        transitionsSnapshot = filteredTransitionsSnapshot; // Update transitionsSnapshot
 
+        int statesBeforeMinimizing = stateNames.size();
 
-        System.out.println("\n--- PHASE 2: Initial Marking (Finding Distinguishable Pairs) ---");
-        Set<Pair> allPairs = createAllPossiblePairs(currentStatesNames);
+        // --- PHASE 2: Initial Marking ---
+        log("\nPHASE 2: Initial Marking");
+        Set<Pair> allPairs = createAllPossiblePairs(stateNames);
         Set<Pair> distinguishablePairs = new HashSet<>();
-
-
-        System.out.println("  Applying Rule 1: Mark pairs where one state is accepting and the other is not.");
         for (Pair p : allPairs) {
-            boolean p1Accepting = currentAcceptingStateNames.contains(p.state1);
-            boolean p2Accepting = currentAcceptingStateNames.contains(p.state2);
+            boolean p1Accepting = acceptingNames.contains(p.state1);
+            boolean p2Accepting = acceptingNames.contains(p.state2);
             if (p1Accepting != p2Accepting) {
                 distinguishablePairs.add(p);
-                System.out.println("    Marked " + p + " (One accepting, one non-accepting).");
+                log("> Marked\n" + p + "\n[Accepting/Non-Accepting]");
             }
         }
+        log("> Total initially marked: " + distinguishablePairs.size());
 
-        // =================================================================================
-        // === START OF MODIFIED CODE BLOCK FOR PHASE 3 ====================================
-        // =================================================================================
-        System.out.println("\n--- PHASE 3: Iterative Marking (Refining Distinguishable Pairs - Video's Exact Logic) ---");
-
-        // Set up the potentially mergeable pairs by removing the initially marked ones.
-        Set<Pair> potentiallyMergeablePairs = new HashSet<>(allPairs);
-        potentiallyMergeablePairs.removeAll(distinguishablePairs);
-
-        // This flag controls the main loop. It stays true as long as any change was made in the last major pass.
-        boolean changesMadeInLastPass = true;
+        // --- PHASE 3: Iterative Marking ---
+        log("\nPHASE 3: Iterative Marking");
         int iteration = 1;
-
-        while (changesMadeInLastPass) { // Outer loop: Continues as long as the previous pass found at least one new distinguishable pair.
-            changesMadeInLastPass = false; // Assume this will be a clean pass with no changes.
-            System.out.println("  Iteration " + iteration + ": Starting a new major scan. Potentially mergeable pairs: " + potentiallyMergeablePairs.size());
-
-            // This flag controls the immediate restart of the scan within a single major iteration.
-            boolean restartScan;
-
-            do {
-                restartScan = false; // At the beginning of a scan, assume we won't need to restart.
-
-                // We MUST use an Iterator to safely remove elements while looping.
-                // A new iterator is created every time the scan restarts.
-                Iterator<Pair> iterator = potentiallyMergeablePairs.iterator();
-
-                while (iterator.hasNext()) {
-                    Pair p = iterator.next();
-
-                    // Check transitions for every symbol in the alphabet.
-                    for (String symbol : currentAlphabetList) {
-                        String r = p.state1;
-                        String s = p.state2;
-
-                        String nextR = filteredTransitionsData.getOrDefault(r, Collections.emptyMap()).get(symbol);
-                        String nextS = filteredTransitionsData.getOrDefault(s, Collections.emptyMap()).get(symbol);
-
-                        // If a transition is missing or they go to the same state, this symbol doesn't help.
-                        if (nextR == null || nextS == null || nextR.equals(nextS)) {
-                            continue;
-                        }
-
-                        // Create the successor pair.
-                        Pair successorPair = new Pair(nextR, nextS);
-
-                        // THE CORE LOGIC: Check if the pair of successor states is already known to be distinguishable.
+        boolean changedInPass = true;
+        while (changedInPass) {
+            changedInPass = false;
+            log("> Iteration " + iteration + ":");
+            int markedThisIteration = 0;
+            for (Pair p : allPairs) {
+                if (distinguishablePairs.contains(p)) continue;
+                for (String symbol : alphabetList) {
+                    String next1 = transitionsSnapshot.getOrDefault(p.state1, Collections.emptyMap()).get(symbol);
+                    String next2 = transitionsSnapshot.getOrDefault(p.state2, Collections.emptyMap()).get(symbol);
+                    if (next1 != null && next2 != null && !next1.equals(next2)) {
+                        Pair successorPair = new Pair(next1, next2);
                         if (distinguishablePairs.contains(successorPair)) {
-                            System.out.println("    - Marked " + p + " because its successor pair " + successorPair + " on symbol '" + symbol + "' is marked.");
-
-                            // 1. Mark the current pair as distinguishable.
+                            log("> Check " + p + ":\non '" + symbol + "' -> " + successorPair + " [is marked] ==> Marking " + p);
                             distinguishablePairs.add(p);
-
-                            // 2. Safely remove it from the potentially mergeable set.
-                            iterator.remove();
-
-                            // 3. Signal that a change has occurred in the overall algorithm.
-                            changesMadeInLastPass = true;
-
-                            // 4. Signal that this specific scan must restart from the beginning (as per the video's logic).
-                            restartScan = true;
-
-                            // 5. Break from the inner 'for' loop (checking symbols), as the pair's fate is sealed.
+                            changedInPass = true;
+                            markedThisIteration++;
                             break;
                         }
                     }
-
-                    if (restartScan) {
-                        // 6. If a restart is needed, break from the main 'while' loop (iterating over pairs)
-                        // to allow the outer 'do-while' loop to re-execute.
-                        System.out.println("      --> A pair was marked. Restarting the scan from the beginning to ensure consistency.");
-                        break;
-                    }
                 }
-                // The 'do-while' loop will repeat if 'restartScan' is true.
-                // This ensures the scan of 'potentiallyMergeablePairs' always starts from the beginning after a change.
-            } while (restartScan);
-
-            if (!changesMadeInLastPass) {
-                System.out.println("  Iteration " + iteration + " completed without any new pairs being marked. The algorithm has converged.");
             }
-
-            iteration++; // Increment major iteration counter.
+            if(markedThisIteration == 0 && changedInPass == false){
+                 log("> No new pairs were marked. Algorithm converged.");
+            }
+            iteration++;
         }
 
-        // =================================================================================
-        // === END OF MODIFIED CODE BLOCK FOR PHASE 3 ======================================
-        // =================================================================================
-
-        System.out.println("  Final distinguishable pairs: " + distinguishablePairs);
+        // --- ANALYSIS COMPLETE ---
         Set<Pair> mergeablePairs = new HashSet<>(allPairs);
         mergeablePairs.removeAll(distinguishablePairs);
-        System.out.println("  Mergeable (indistinguishable) pairs: " + mergeablePairs);
+        log("\nANALYSIS COMPLETE");
+        log("> Distinguishable:\n" + distinguishablePairs);
+        log("> Mergeable:\n" + mergeablePairs);
 
-
-        System.out.println("\n--- PHASE 4: Constructing Minimized DFA ---");
-
-
-        rebuildDFAFromMinimized(currentStatesNames, originalDFAStatesSnapshot, currentStatesNames, currentInitialStateName, currentAcceptingStateNames, filteredTransitionsData, currentAlphabetList, mergeablePairs);
-        System.out.println("DFA Minimization Complete.");
+        // --- PHASE 4: Construct Minimized DFA ---
+        rebuildDFAFromMinimized(originalStatesSnapshot, stateNames, initialName, acceptingNames, transitionsSnapshot, mergeablePairs, statesBeforeMinimizing);
     }
-
-
 
     private Set<String> findReachableStates(String startState, Map<String, Map<String, String>> transitions) {
         Set<String> reachable = new HashSet<>();
         Queue<String> queue = new LinkedList<>();
-
         if (startState != null) {
             queue.add(startState);
             reachable.add(startState);
         }
-
         while (!queue.isEmpty()) {
-            String currentState = queue.poll();
-            Map<String, String> currentTransitions = transitions.get(currentState);
-            if (currentTransitions != null) {
-                for (String nextState : currentTransitions.values()) {
-                    if (nextState != null && !reachable.contains(nextState)) {
-                        reachable.add(nextState);
-                        queue.add(nextState);
+            String current = queue.poll();
+            Map<String, String> currentTrans = transitions.get(current);
+            if (currentTrans != null) {
+                for (String next : currentTrans.values()) {
+                    if (next != null && reachable.add(next)) {
+                        queue.add(next);
                     }
                 }
             }
@@ -575,360 +505,94 @@ public class DFA {
         return pairs;
     }
 
-    private Map<String, Set<String>> createNewStates(Set<String> originalStates, Set<Pair> mergeablePairs) {
-        log("Grouping mergeable states into new super-states...");
-        UnionFind uf = new UnionFind(originalStates);
+    private void rebuildDFAFromMinimized(Set<State> originalStates, Set<String> stateNames, String initialName, Set<String> acceptingNames, Map<String, Map<String, String>> transitions, Set<Pair> mergeablePairs, int statesBeforeMinimizing) {
+        log("\nPHASE 4: Rebuilding Minimized DFA");
+        
+        this.clear();
+
+        log("> Grouping states:");
+        UnionFind uf = new UnionFind(stateNames);
         for (Pair p : mergeablePairs) {
             uf.union(p.state1, p.state2);
         }
-        log("  Initial equivalence classes: " + uf.getGroups());
-        return uf.getGroups();
-    }
-
-    private void rebuildDFAFromMinimized(Set<String> oldStatesNames, Set<State> originalDFAStatesSnapshot, Set<String> currentStatesNames, String oldStartStateName, Set<String> oldAcceptingStateNames, Map<String, Map<String, String>> oldTransitions, List<String> currentAlphabetList, Set<Pair> mergeablePairs) {
-        log("\n--- Rebuilding DFA from Minimized State ---");
-        log("  Old Start State Name: " + oldStartStateName);
-        log("  Old Accepting State Names: " + oldAcceptingStateNames);
-        log("  Mergeable Pairs: " + mergeablePairs);
-
-
-        log("  Clearing old DFA model, UI visuals, and resetting static state properties...");
-        if (controllerInstance != null && controllerInstance.getPane() != null) {
-            Platform.runLater(() -> {
-                controllerInstance.getPane().getChildren().clear();
-                log("    UI Pane cleared.");
-            });
-        }
-
-        this.states.clear();
-        this.acceptingStates.clear();
-        this.initialState = null;
-        State.clearAllStateNames();
-        State.resetIdCounter();
-        State.setSelectedState(null);
-
-
-        log("  Original DFA States Snapshot Contents: (Total: " + originalDFAStatesSnapshot.size() + ")");
-        originalDFAStatesSnapshot.forEach(s ->
-            log("    - State: " + s.getName() + ", Pos: (" + s.getLayoutX() + ", " + s.getLayoutY() +
-                "), Fill: " + s.getMainCircle().getFill() + ", Stroke: " + s.getMainCircle().getStroke() +
-                ", Radius: " + s.getMainCircle().getRadius() + ", StrokeWidth: " + s.getMainCircle().getStrokeWidth() +
-                ", IsInitial: " + s.isInitial() + ", IsAccepting: " + s.isAccepting())
-        );
-
-
-        Map<String, Set<String>> newStatesGrouping = createNewStates(currentStatesNames, mergeablePairs);
-
-        Map<Set<String>, String> groupToNewName = new HashMap<>();
-        Map<String, Set<String>> oldStateToGroup = new HashMap<>();
-
-        List<Set<String>> sortedGroups = newStatesGrouping.values().stream()
-            .sorted(Comparator.comparing(g -> g.stream().sorted().collect(Collectors.joining("/"))))
-            .collect(Collectors.toList());
-
-        log("  Creating new state names from groups...");
-        for (Set<String> group : sortedGroups) {
-            String newName = group.stream().sorted().collect(Collectors.joining("/"));
-            groupToNewName.put(group, newName);
-            for (String oldStateName : group) {
-                oldStateToGroup.put(oldStateName, group);
-            }
-            log("    Group " + group + " maps to new name: " + newName);
-        }
-
-        Set<State> newDFAStates = new HashSet<>();
+        Map<String, Set<String>> groups = uf.getGroups();
+        
         Map<String, State> newNameToStateMap = new HashMap<>();
-
-        log("  Creating new State objects for minimized DFA...");
-        for (Set<String> group : sortedGroups) {
-            String newName = groupToNewName.get(group);
-            log("    Processing group: " + group + " with new name: " + newName);
-
-            double newX = 0;
-            double newY = 0;
-            Color newColor = Color.LIGHTGRAY;
-            double newRadius = 15;
-            Color newStrokeColor = Color.BLACK;
-            double newStrokeWidth = 1.0;
-            boolean isNewStateInitial = false;
-            boolean isNewStateAccepting = false;
-
-
+        List<State> newStatesCreated = new ArrayList<>();
+        
+        for (Set<String> group : groups.values()) {
+            String newName = String.join("/", new TreeSet<>(group));
+            log("> > Group " + group + " -> new state \"" + newName + "\"");
+            
+            double avgX = 0, avgY = 0;
+            State repr = null;
             int count = 0;
-            State representativeOldState = null;
-
-            for (String oldStateNameInGroup : group) {
-                log("      Attempting to find original state: " + oldStateNameInGroup);
-
-                Optional<State> originalStateOptional = originalDFAStatesSnapshot.stream()
-                    .filter(s -> s.getName().equals(oldStateNameInGroup))
-                    .findFirst();
-
-                if (originalStateOptional.isPresent()) {
-                    State oldState = originalStateOptional.get();
-                    log("        Found original state: " + oldState.getName() + " at (" + oldState.getLayoutX() + ", " + oldState.getLayoutY() + ")");
-                    newX += oldState.getLayoutX();
-                    newY += oldState.getLayoutY();
-                    count++;
-
-
-                    if (representativeOldState == null) {
-                        representativeOldState = oldState;
+            for (String oldName : group) {
+                for(State oldState : originalStates){
+                    if(oldState.getName().equals(oldName)){
+                        avgX += oldState.getLayoutX();
+                        avgY += oldState.getLayoutY();
+                        if(repr == null) repr = oldState;
+                        count++;
+                        break;
                     }
-
-
-                    if (oldState.isInitial()) {
-                        isNewStateInitial = true;
-                    }
-                    if (oldState.isAccepting()) {
-                        isNewStateAccepting = true;
-                    }
-                } else {
-                    log("        [DEBUG] Original state '" + oldStateNameInGroup + "' not found in snapshot.");
                 }
             }
-
-            if (count > 0 && representativeOldState != null) {
-                newX /= count;
-                newY /= count;
-                newColor = (Color) representativeOldState.getMainCircle().getFill();
-                newRadius = representativeOldState.getMainCircle().getRadius();
-                newStrokeColor = (Color) representativeOldState.getMainCircle().getStroke();
-                newStrokeWidth = representativeOldState.getMainCircle().getStrokeWidth();
-                log("      Calculated position for '" + newName + "' (X: " + newX + ", Y: " + newY +
-                    "), Derived Fill: " + newColor + ", Derived Stroke: " + newStrokeColor +
-                    ", Derived Radius: " + newRadius + ", Derived StrokeWidth: " + newStrokeWidth +
-                    ", Derived IsInitial: " + isNewStateInitial + ", Derived IsAccepting: " + isNewStateAccepting);
-            } else {
-                 log("      Could not find any original states for group: " + group + ". Using default visual properties and position.");
-                newX = 50 + newDFAStates.size() * 100;
-                newY = 50;
+            if (count > 0) {
+                avgX /= count;
+                avgY /= count;
             }
-
-            State newState = new State(newX, newY, newRadius, newColor, newStrokeColor, newStrokeWidth, newName, this.controllerInstance);
-
-            if (isNewStateInitial) {
-                newState.setAsInitial(true);
-            }
-            if (isNewStateAccepting) {
-                newState.setAccepting(true);
-            }
-            newDFAStates.add(newState);
+            State newState = new State(avgX, avgY, repr.getMainCircle().getRadius(), (Color) repr.getMainCircle().getFill(), (Color) repr.getMainCircle().getStroke(), repr.getMainCircle().getStrokeWidth(), newName, this.controllerInstance);
+            newStatesCreated.add(newState);
             newNameToStateMap.put(newName, newState);
-            log("      Created new state: " + newState.getName() + ", added to newDFAStates and newNameToStateMap.");
         }
 
-
-
-        log("  Determining new initial state (redundant check, status set during creation)...");
-        State newInitialState = null;
-        if (oldStartStateName != null && oldStateToGroup.containsKey(oldStartStateName)) {
-            Set<String> initialGroup = oldStateToGroup.get(oldStartStateName);
-            String newInitialStateName = groupToNewName.get(initialGroup);
-            newInitialState = newNameToStateMap.get(newInitialStateName);
-            if (newInitialState != null) {
-
-            }
-            log("    New initial state identified: " + (newInitialState != null ? newInitialState.getName() : "null (error)"));
-        } else {
-            log("    Could not determine new initial state (old initial state name was null or not in groups).");
-        }
-
-        log("  Determining new accepting states (redundant check, status set during creation)...");
-        Set<State> newAcceptingStates = new HashSet<>();
-        for (Set<String> group : sortedGroups) {
-            if (!Collections.disjoint(group, oldAcceptingStateNames)) {
-                String nameOfNewAcceptingState = groupToNewName.get(group);
-                State newAcceptingState = newNameToStateMap.get(nameOfNewAcceptingState);
-                if (newAcceptingState != null) {
-
-                    newAcceptingStates.add(newAcceptingState);
-                    log("    Added new accepting state: " + newAcceptingState.getName() + " (from group: " + group + ")");
-                }
-            }
-        }
-
-        log("  Adding new minimized states and transitions to DFA model and UI...");
-
-
-        for (State s : newDFAStates) {
-            this.states.add(s);
-            if (controllerInstance != null && controllerInstance.getPane() != null) {
-                Platform.runLater(() -> {
-                    controllerInstance.getPane().getChildren().add(s);
-                    s.setSelectionListener(controllerInstance);
-                    log("    Added state '" + s.getName() + "' to UI pane.");
-                });
-            }
-        }
-
-
-
-
-        if (newInitialState != null) {
-            setInitialState(newInitialState);
-            log("    Successfully set new initial state: " + newInitialState.getName());
-        } else {
-            log("[ERROR] New initial state is null, cannot set it.");
-        }
-
-        for (State s : newAcceptingStates) {
-            addAcceptingState(s);
-            log("    Successfully added new accepting state: " + s.getName());
-        }
-
-
-        for (State newState : newDFAStates) {
-            String sampleOldStateName = null;
-            for (Set<String> group : sortedGroups) {
-                if (groupToNewName.get(group).equals(newState.getName())) {
-                    sampleOldStateName = group.iterator().next();
+        this.states.addAll(newStatesCreated);
+        
+        for(State s : newStatesCreated){
+            Set<String> group = groups.get(uf.find(s.getName().split("/")[0]));
+            if(group.contains(initialName)) this.setInitialState(s);
+            for(String name : acceptingNames){
+                if(group.contains(name)){
+                    this.addAcceptingState(s);
                     break;
                 }
             }
-            if (sampleOldStateName == null) {
-                log("[WARNING] No sample old state name found for new state '" + newState.getName() + "'. Cannot recreate transitions.");
-                continue;
+        }
+        
+        log("> Rebuilding transitions:");
+        Platform.runLater(() -> {
+            if (controllerInstance != null && controllerInstance.getPane() != null) {
+                controllerInstance.getPane().getChildren().clear();
             }
+            for (State newState : newStatesCreated) {
+                controllerInstance.getPane().getChildren().add(newState);
+                newState.setSelectionListener(controllerInstance);
 
-            Map<String, String> oldStateTransitions = oldTransitions.get(sampleOldStateName);
-            if (oldStateTransitions == null) {
-                log("[WARNING] No old transitions found for sample old state '" + sampleOldStateName + "' for new state '" + newState.getName() + "'.");
-                continue;
-            }
+                String reprOldName = newState.getName().split("/")[0];
+                Map<String, String> oldTransitions = transitions.get(reprOldName);
+                if (oldTransitions != null) {
+                    for (Map.Entry<String, String> entry : oldTransitions.entrySet()) {
+                        String symbol = entry.getKey();
+                        String targetOldName = entry.getValue();
+                        String targetNewName = String.join("/", new TreeSet<>(groups.get(uf.find(targetOldName))));
+                        State targetNewState = newNameToStateMap.get(targetNewName);
 
-            for (String symbol : currentAlphabetList) {
-                String oldTargetStateName = oldStateTransitions.get(symbol);
-                if (oldTargetStateName != null) {
-                    Set<String> targetGroup = oldStateToGroup.get(oldTargetStateName);
-                    if (targetGroup != null) {
-                        String newTargetStateName = groupToNewName.get(targetGroup);
-                        State newTargetState = newNameToStateMap.get(newTargetStateName);
-                        if (newTargetState != null) {
-                            newState.addTransitionDirect(symbol, newTargetState);
-                            log("    Added transition: (" + newState.getName() + ", '" + symbol + "') --> " + newTargetState.getName());
-
-
-                            if (controllerInstance != null && controllerInstance.getPane() != null) {
-                                Platform.runLater(() -> {
-
-                                    Transition newTransition = new Transition(newState, this, controllerInstance);
-                                    newTransition.setSymbol(symbol);
-                                    newTransition.completeTransition(newTargetState);
-                                    newTransition.setSelectionListener(controllerInstance);
-                                    log("      Created and added visual transition: " + newTransition);
-                                });
-                            } else {
-                                log("[WARNING] controllerInstance or pane is null for adding visual transition.");
-                            }
-                        } else {
-                            log("[WARNING] Target state '" + newTargetStateName + "' not found in newNameToStateMap for transition from '" + newState.getName() + "' on symbol '" + symbol + "'.");
+                        if (targetNewState != null) {
+                            log("> > New transition: (\"" + newState.getName() + "\", '" + symbol + "') -> \"" + targetNewState.getName() + "\"");
+                            Transition newT = new Transition(newState, this, controllerInstance);
+                            newT.setSymbol(symbol);
+                            newT.completeTransition(targetNewState);
+                            newState.addTransition(newT);
+                            newT.setSelectionListener(controllerInstance);
+                            this.addOrUpdateTransition(newState, symbol, targetNewState);
                         }
-                    } else {
-                        log("[WARNING] Target group for '" + oldTargetStateName + "' not found for transition from '" + newState.getName() + "' on symbol '" + symbol + "'.");
                     }
-                } else {
-                    log("    No transition found for state '" + newState.getName() + "' on symbol '" + symbol + "' in old transitions.");
                 }
             }
-        }
-
-        log("\n=============================================");
-        log("      FINAL MINIMIZED DFA RESULTS");
-        log("=============================================");
-
-        log("\nMerged States (Equivalence Classes):");
-        for (Set<String> group : sortedGroups) {
-            log(groupToNewName.get(group) + ": " + group);
-        }
-
-        log("\nNew DFA Transitions:");
-        for (State newState : newDFAStates) {
-            String sourceNewName = newState.getName();
-            for (String symbol : currentAlphabetList) {
-                Transition transition = newState.getTransition(symbol);
-                if (transition != null && transition.getNextState() != null) {
-                    String targetNewName = transition.getNextState().getName();
-                    log("(" + sourceNewName + ") --" + symbol + "--> (" + targetNewName + ")");
-                }
-            }
-        }
-
-        log("\nNew Start and Final States:");
-        log("New Start State: " + (newInitialState != null ? newInitialState.getName() : "None"));
-        log("New Final States: " + newAcceptingStates.stream().map(State::getName).collect(Collectors.toSet()));
-        log("---------------------------------------------");
-
-        if (controllerInstance != null) {
             controllerInstance.updateUIComponents();
-            controllerInstance.updateTransitionTable();
-        }
-    }
-
-
-    public void addOrUpdateTransition(State fromState, String symbol, State toState) {
-        if (fromState == null || toState == null || symbol == null || symbol.isEmpty()) {
-            return;
-        }
-        this.addSymbol(symbol);
-
-        // Update the transitions map
-        this.transitions.computeIfAbsent(fromState, k -> new HashMap<>()).put(symbol, toState);
-
-        if (controllerInstance != null) {
-            controllerInstance.updateTransitionTable();
-        }
-    }
-
-    public String toDotString() {
-        StringBuilder dot = new StringBuilder();
-        dot.append("digraph DFA {\n");
-        dot.append("    rankdir=LR;\n");
-        dot.append("    node [shape = circle];\n");
-
-        // Define initial state pointer
-        if (initialState != null) {
-            dot.append("    start [shape = point];\n");
-            dot.append("    start -> \"").append(initialState.getName()).append("\";\n");
-        }
-
-        // Define states and their properties (accepting, initial)
-        for (State state : states) {
-            dot.append("    \"").append(state.getName()).append("\"");
-            if (state.isAccepting()) {
-                dot.append(" [shape = doublecircle]");
-            }
-            dot.append(";\n");
-        }
-
-        // Define transitions
-        for (State state : states) {
-            for (Transition transition : state.getTransitions()) {
-                if (transition.getNextState() != null) {
-                    dot.append("    \"").append(state.getName()).append("\" -> \"")
-                       .append(transition.getNextState().getName()).append("\" [label = \"")
-                       .append(transition.getSymbol()).append("\"];\n");
-                }
-            }
-        }
-        dot.append("}\n");
-        return dot.toString();
-    }
-
-    public void clear() {
-        this.states.clear();
-        this.alphabet.clear();
-        this.initialState = null;
-        this.acceptingStates.clear();
-        this.transitions.clear();
-        State.clearAllStateNames();
-        State.resetIdCounter();
-        State.setSelectedState(null);
-    }
-
-    public void log(String message) {
-        if (controllerInstance != null) {
-            controllerInstance.log(message);
-        }
+            log("\nDFA Minimization Complete.");
+            log("Minimized from " + statesBeforeMinimizing + " to " + this.states.size() + " states.");
+        });
     }
 }

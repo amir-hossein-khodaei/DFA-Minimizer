@@ -1,154 +1,140 @@
 # DFA Minimizer
 
-A visual application for creating, editing, and minimizing Deterministic Finite Automata (DFAs).
+An interactive JavaFX application for creating, visualizing, and minimizing Deterministic Finite Automata (DFAs). This tool is designed as an educational resource for students, computer scientists, and educators to understand the principles of automata theory through a hands-on, graphical interface.
 
-## Project Overview
-
-DFA Minimizer is a JavaFX application that allows users to:
-
-- Create and edit DFAs through an intuitive graphical interface
-- Add and modify states and transitions
-- Set initial and accepting states
-- Automatically minimize DFAs using the partitioning algorithm
-- Remove unreachable states
-- Visualize DFA structure and transitions
-
-This tool is useful for students learning about automata theory, computer scientists working with formal languages, and educators teaching these concepts.
+This application allows users to:
+- Create and edit DFAs through an intuitive graphical canvas.
+- Visualize DFA structure and transitions in real-time.
+- Automatically minimize DFAs using a table-filling algorithm.
+- Learn from a detailed log of the entire minimization process.
 
 ## Features
 
-- **Interactive DFA Editor**: Create and manipulate DFA components with drag-and-drop functionality
-- **Visual State Management**: Add, remove, and reposition states with intuitive controls
-- **Transition Creation**: Create and edit transitions between states with custom symbols
-- **Minimization Algorithm**: Automatically minimize DFAs to their simplest equivalent form
-- **State Properties**: Configure states as initial or accepting states
-- **Transition Table**: View and edit DFA transitions in a convenient table format
-- **Dynamic Visualization**: Real-time visual updates as you modify the automaton
-- **Multi-panel Interface**: Separate panels for editing, visualization, and feedback
+-   **Interactive Canvas:** A user-friendly drag-and-drop interface to create and arrange DFA states and transitions.
+-   **Visual State Management:** Add, rename, delete, and reposition states. Designate states as initial or accepting with simple checkbox controls.
+-   **Intuitive Transition Editing:** Create transitions between states with a `Ctrl+Click` gesture. Edit transition symbols and adjust the curvature of transition arrows for clarity.
+-   **Real-time Transition Table:** The application automatically generates and updates a transition table that reflects the current state of the DFA on the canvas.
+-   **One-Click DFA Minimization:** Implements the table-filling algorithm to minimize the DFA by removing unreachable states and merging indistinguishable states.
+-   **Detailed Process Logging:** The minimization process is fully logged, showing each step from identifying unreachable states to marking distinguishable pairs and grouping mergeable states.
+
+## Screenshots
+
+**1. Designing a complex DFA (Initial State).**
+![DFA Minimizer Initial State](image2.png)
+
+**2. The resulting minimized DFA and the detailed process log.**
+![DFA Minimizer Minimized DFA](image1.png)
 
 ## Installation Instructions
 
 ### Prerequisites
 
-- Java 11 or higher
-- JavaFX SDK 11 or higher
-- Maven (for building from source)
+-   Java Development Kit (JDK) 11 or higher
+-   Maven (for building from source)
 
-### Setup
+### Running the Application
 
-1. **Clone the repository**
-   ```
-   git clone https://github.com/Amkhodaei83/DFA
-   cd dfa-minimizer
-   ```
+#### From GitHub Releases (Recommended)
 
-2. **Build with Maven**
-   ```
-   mvn clean package
-   ```
+1.  Go to the [Releases page](https://github.com/Amkhodaei83/DFA/releases) of this repository.
+2.  Download the latest `DFA_app-X.Y-SNAPSHOT.jar` file (replace `X.Y` with the actual version number).
+3.  Run the application using the command line:
+    ```bash
+    java -jar DFA_app-X.Y-SNAPSHOT.jar
+    ```
+    *Note: Replace `X.Y` with the actual version number of the downloaded JAR file.*
 
-3. **Run the application**
-   ```
-   java -jar target/dfa-minimizer.jar
-   ```
+#### Building and Running from Source
 
-   Alternatively, if using an IDE:
-   ```
-   mvn javafx:run
-   ```
+1.  **Clone the repository:**
+    ```bash
+    git clone https://github.com/Amkhodaei83/DFA.git
+    cd DFA
+    ```
+
+2.  **Build with Maven:**
+    ```bash
+    mvn clean install
+    ```
+    This will create the runnable JAR file in the `target/` directory.
+
+3.  **Run the application from source build:**
+    ```bash
+    java -jar target/DFA_app-1.0-SNAPSHOT.jar
+    ```
 
 ## Usage Guide
 
 ### Creating a DFA
 
-1. **Add States**: Click the "New State" button or press Ctrl+N, then click on the canvas to place a state
-2. **Set State Properties**: Select a state and use the State Settings panel to:
-   - Name the state
-   - Set it as an initial state
-   - Set it as an accepting state
-
-3. **Add Transitions**: Click the "New Transition" button, then:
-   - Click on the source state
-   - Click on the destination state
-   - Enter the transition symbol
+1.  **Add a State**: Click the "New State" button or press `Ctrl+N`, then click on the canvas to place a state.
+2.  **Set State Properties**: Select a state to open the **State Settings** panel. Here you can:
+    -   Name the state.
+    -   Set it as the initial state.
+    -   Set it as an accepting state.
+3.  **Add a Transition**:
+    -   Hold `Ctrl` and `Primary Click` on the source state.
+    -   Drag your cursor to the destination state and release.
+    -   Select the new transition to edit its symbol.
 
 ### Minimizing a DFA
 
-1. Create or load a complete DFA
-2. Press the "Start Process" button or press Ctrl+R
-3. The application will automatically:
-   - Remove unreachable states
-   - Group equivalent states
-   - Display the minimized DFA
+1.  Ensure your DFA is complete (i.e., every state has an outgoing transition for each symbol in the alphabet).
+2.  Press the **Minimize DFA** button or press `Ctrl+R`.
+3.  The application will automatically remove unreachable states, group equivalent states, and display the minimized DFA on the canvas.
 
 ### Keyboard Shortcuts
 
-- **Ctrl+N**: Create a new state
-- **Ctrl+T**: Create a new transition
-- **Ctrl+R**: Minimize the DFA
-- **Delete**: Remove selected state or transition
+-   **`Ctrl+N`**: Create a new state.
+-   **`Ctrl+R`**: Minimize the DFA.
+-   **`Ctrl+D`** or **`Delete`**: Remove the selected state or transition.
 
 ## Code Architecture
 
-The application follows the Model-View-Controller (MVC) architecture:
+The application follows the Model-View-Controller (MVC) design pattern:
 
-### Model
-- `DFA`: Core class representing the automaton with its states and alphabet
-- `State`: Represents individual states with properties (initial, accepting)
-- `Transition`: Manages connections between states with their symbols
+-   **Model**:
+    -   `DFA`: The core class representing the automaton, its states, alphabet, and transitions. Contains the minimization logic.
+    -   `State`: Represents an individual state with properties (name, initial, accepting) and its outgoing transitions.
+    -   `Transition`: Manages a connection from a source state to a destination state for a given symbol.
 
-### View
-- JavaFX FXML layouts define the user interface
-- Custom components visualize the automaton elements
-- CSS styling for consistent appearance
+-   **View**:
+    -   `Main_DFA.fxml`: Defines the layout and components of the user interface.
+    -   `styles2.css`: Provides the styling for a consistent and modern appearance.
+    -   Custom visual nodes (`State.java`, `Transition.java`, `CurvedArrow.java`) render the DFA on the canvas.
 
-### Controller
-- `Application_Controler`: Manages UI interactions and updates
-- Handles selection events, state changes, and minimization operations
+-   **Controller**:
+    -   `Application_Controler.java`: Manages all UI interactions, handles user input, and coordinates updates between the model (DFA) and the view (canvas and settings panels).
 
 ## Contributing
 
-Contributions are welcome! To contribute:
+Contributions are welcome! To contribute, please follow these steps:
 
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/amazing-feature`
-3. Commit your changes: `git commit -m 'Add some amazing feature'`
-4. Push to the branch: `git push origin feature/amazing-feature`
-5. Open a Pull Request
+1.  Fork the repository.
+2.  Create a feature branch: `git checkout -b feature/amazing-feature`
+3.  Commit your changes: `git commit -m 'Add some amazing feature'`
+4.  Push to the branch: `git push origin feature/amazing-feature`
+5.  Open a Pull Request.
 
 ### Development Guidelines
 
-When contributing, please follow these guidelines:
-
-- Maintain the existing code style and naming conventions
-- Add comments for complex algorithms or behaviors
-- Update unit tests for any changed functionality
-- Update documentation for new features or changes
-
-## Troubleshooting
-
-Common issues and solutions:
-
-- **JavaFX not found**: Ensure you have the correct JavaFX SDK installed and properly referenced
-- **States can't be selected**: Make sure you're not in "New State" or "New Transition" mode
-- **Minimization not working**: Verify your DFA is complete (transitions for all alphabet symbols from each state)
+-   Maintain the existing code style and naming conventions.
+-   Add Javadoc comments for complex algorithms or public methods.
+-   Ensure new features are well-documented in the README.
 
 ## Future Enhancements
 
-Planned features for future releases:
-
-- Undo/redo functionality for all operations
-- Save/load DFAs to common formats
-- Animation of DFA execution on input strings
-- Export as image or PDF
-- Multiple automata comparison
+-   Undo/redo functionality for all operations.
+-   Save/load DFAs to and from a custom file format.
+-   Animation of DFA execution on input strings.
+-   Support for Non-deterministic Finite Automata (NFAs) and NFA-to-DFA conversion.
+-   Export the canvas as an image (PNG, SVG).
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License - see the `LICENSE` file for details.
 
 ## Acknowledgments
 
-- Built with JavaFX for the graphical user interface
-- Uses the partitioning algorithm for DFA minimization
-- Inspired by automata theory and formal language concepts
+-   Built with **JavaFX** for the graphical user interface.
+-   Inspired by concepts from formal language and automata theory.
