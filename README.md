@@ -113,7 +113,7 @@ The application follows the Model-View-Controller (MVC) design pattern:
   
   
   
-  <img title="" src="file:///E:/user/Desktop/DFA-Minimizer/New%20folder/DFA-Minimizer/UML.png" alt="UML.png" data-align="center" width="657">
+![Code Architecture](UML.png)
 
 ## Contributing
 
