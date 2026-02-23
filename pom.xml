@@ -89,7 +89,38 @@
                             <noHeaderFiles>true</noHeaderFiles>
                         </configuration>
                     </execution>
+                    <execution>
+                        <id>default-jlink</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>jlink</goal>
+                        </goals>
+                        <configuration>
+                            <mainClass>com.example.dfa_app/com.example.dfa_app.DFA_Application</mainClass>
+                            <stripDebug>true</stripDebug>
+                            <compress>2</compress>
+                            <noHeaderFiles>true</noHeaderFiles>
+                            <noManPages>true</noManPages>
+                            <launcher>DFA_app</launcher>
+                            <jlinkImageName>DFA_app_image</jlinkImageName>
+                            <jlinkZipName>DFA_app_zip</jlinkZipName>
+                        </configuration>
+                    </execution>
                 </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.3.0</version>
+                <configuration>
+                    <archive>
+                        <manifest>
+                            <addClasspath>true</addClasspath>
+                            <classpathPrefix>lib/</classpathPrefix>
+                            <mainClass>com.example.dfa_app.DFA_Application</mainClass>
+                        </manifest>
+                    </archive>
+                </configuration>
             </plugin>
         </plugins>
     </build>

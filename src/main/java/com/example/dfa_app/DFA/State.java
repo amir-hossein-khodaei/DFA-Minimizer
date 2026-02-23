@@ -1,5 +1,6 @@
 package com.example.dfa_app.DFA;
 
+import com.example.dfa_app.Application_Controler;
 import com.example.dfa_app.SelectionListener;
 import javafx.animation.Interpolator;
 import javafx.animation.KeyFrame;
@@ -10,8 +11,11 @@ import javafx.application.Platform;
 import javafx.scene.Group;
 import javafx.scene.control.Alert;
 import javafx.scene.input.MouseButton;
+import javafx.scene.input.MouseEvent;
+import javafx.scene.layout.Pane;
 import javafx.scene.paint.Color;
 import javafx.scene.shape.Circle;
+import javafx.scene.shape.Polygon;
 import javafx.util.Duration;
 
 import java.util.ArrayList;
@@ -22,144 +26,315 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-/**
- * State represents a node in a DFA.
- * It is selectable and editable via an in-place EditableLabel.
- * The state prevents deselection until a valid (non-empty and unique) name is entered.
- */
+// - Represents a state node in a DFA with visual representation
+// - Provides selection, editing, and transition management
+// - Ensures unique naming and handles user interactions
 public class State extends Group implements simularity {
 
-    // --- Static Fields ---
+    // - Static tracking for state selection and naming
     private static State selectedState = null;
     private static long idCounter = 0;
-    private static final Set<String> stateNames = new HashSet<>();
+    public static final Set<String> stateNames = new HashSet<>();
+    private static DFA dfaInstance; // Static reference to the DFA instance
 
-    // --- Instance Fields ---
+    // - Method to set the DFA instance for all states
+    public static void setDFAInstance(DFA dfa) {
+        State.dfaInstance = dfa;
+    }
+
+    // - Method to clear all state names from the static set
+    public static void clearAllStateNames() {
+        // if (dfaInstance != null && dfaInstance.getControllerInstance() != null) {
+        //     dfaInstance.getControllerInstance().log("Clearing all state names. Before clear: " + stateNames);
+        // }
+        stateNames.clear();
+        // if (dfaInstance != null && dfaInstance.getControllerInstance() != null) {
+        //     dfaInstance.getControllerInstance().log("After clear: " + stateNames);
+        // }
+    }
+
+    // - Method to reset the static ID counter
+    public static void resetIdCounter() {
+        idCounter = 0;
+    }
+
+    // - Access currently selected state
+    public static State getSelectedState() {
+        return selectedState;
+    }
+
+    // - Set the currently selected state
+    public static void setSelectedState(State state) {
+        selectedState = state;
+    }
+
+    // - Instance fields for state properties and visuals
     private final long id;
     private String name;
-    private boolean accepting;
+    private boolean accepting = false; // Default to false
+    private boolean isInitial = false; // Track if this is the initial state
     private final List<Transition> transitions = new ArrayList<>();
     private final Circle mainCircle;
-    private Circle acceptingIndicator;
+    private Circle acceptingIndicator; // Visual for accepting state (double circle)
+    private Polygon initialIndicator; // Visual for initial state (arrow)
     private final EditableLabel editableLabel;
-private final boolean selected = false;
-    // Drag and event related fields.
+    private boolean wasJustDragged = false; // Flag for drag state
+    // - Fields for drag handling and event management
     private double dragDeltaX;
     private double dragDeltaY;
     private double offsetX;
     private double offsetY;
     private SelectionListener selectionListener;
+    private Application_Controler controllerInstance; // Reference to the controller for table updates
 
-    // --- Constructors ---
-    public State(double centerX, double centerY, double radius, Color color) {
+    // - Create a state with basic properties
+    public State(double centerX, double centerY, double radius, Color fillColor, Color strokeColor, double strokeWidth, Application_Controler controller) {
         this.id = idCounter++;
         setLayoutX(centerX);
         setLayoutY(centerY);
+        this.controllerInstance = controller; // Store controller reference
 
         mainCircle = new Circle(0, 0, radius);
-        mainCircle.setFill(color);
-        mainCircle.setStroke(Color.BLACK);
+        mainCircle.setFill(fillColor);
+        mainCircle.setStroke(strokeColor);
+        mainCircle.setStrokeWidth(strokeWidth);
         mainCircle.setUserData(this);
 
         editableLabel = new EditableLabel();
-        editableLabel.setEditorPosition(radius, -1.5 * radius);
-        editableLabel.setMouseTransparent(true);
+        editableLabel.setMouseTransparent(true); 
+        // NO initial positioning here - setLabelText handles it
 
-        // Add visual components to the Group.
-        getChildren().addAll(mainCircle, editableLabel);
+        getChildren().add(mainCircle);
+        createAcceptingIndicator();
+        createInitialIndicator();
+        getChildren().add(editableLabel); 
+
         setPickOnBounds(true);
         setFocusTraversable(true);
 
-        this.accepting = false;
-        // Start with an empty name.
-        this.name = "";
+        this.name = ""; 
+        setLabelText(this.name); // Set initial text & position
     }
 
-    public State(double centerX, double centerY, double radius, Color color, String name) {
-        this(centerX, centerY, radius, color);
-        setName(name);
+    // Overloaded constructor for backward compatibility, uses default stroke
+    public State(double centerX, double centerY, double radius, Color color, Application_Controler controller) {
+        this(centerX, centerY, radius, color, Color.BLACK, 1.0, controller); // Default stroke
     }
 
-    // --- Selection Listener ---
+    // - Create a state with name and basic properties
+    // Overloaded constructor with name and all visual properties
+    public State(double centerX, double centerY, double radius, Color fillColor, Color strokeColor, double strokeWidth, String name, Application_Controler controller) {
+        this(centerX, centerY, radius, fillColor, strokeColor, strokeWidth, controller); // Call the main constructor
+        setName(name); // Set the name using the validation logic
+    }
+
+    // Overloaded constructor with name, uses default stroke
+    public State(double centerX, double centerY, double radius, Color color, String name, Application_Controler controller) {
+        this(centerX, centerY, radius, color, Color.BLACK, 1.0, name, controller); // Default stroke
+    }
+
+    // - Register selection event listener
     public void setSelectionListener(SelectionListener listener) {
         this.selectionListener = listener;
     }
 
-    // --- Name Getters and Setters ---
+    // - Get state name
     public String getName() {
         return name;
     }
 
-    /**
-     * Sets a new name if valid. If the proposed name is invalid (empty or not unique),
-     * an alert is shown and editing is restarted.
-     */
+    // - Set state name with validation
+    // - Rejects empty or duplicate names
+    // - Notifies DFA instance of name change
     public void setName(String newName) {
         if (isNullOrEmpty(newName)) {
+            // if (controllerInstance != null) {
+            //     controllerInstance.log("[State] Attempted to set empty state name. Current names: " + stateNames);
+            // }
             showAlert("Invalid State Name", "State name cannot be empty. Please choose a unique name.");
             Platform.runLater(editableLabel::startEditing);
             return;
         }
-        if (newName.equals(this.name)) {
-            return;
+
+        String oldName = this.name; // Store old name before checking for equality
+
+        if (newName.equals(oldName)) {
+            return; // No actual change
         }
+
         if (stateNames.contains(newName)) {
+            // if (controllerInstance != null) {
+            //     controllerInstance.log("[State] Attempted to set duplicate state name: '" + newName + "'. Current names: " + stateNames);
+            // }
             showAlert("Duplicate State Name", "A state with the name '" + newName + "' already exists. Please choose a unique name.");
             Platform.runLater(editableLabel::startEditing);
             return;
         }
-        // Remove old name and update.
-        if (!isNullOrEmpty(this.name)) {
-            stateNames.remove(this.name);
+        // - Remove old name and update
+        if (!isNullOrEmpty(oldName)) {
+            stateNames.remove(oldName);
+            // if (controllerInstance != null) {
+            //     controllerInstance.log("[State] Removed old state name: '" + oldName + "'. Current names after removal: " + stateNames);
+            // }
         }
         this.name = newName;
         stateNames.add(newName);
+        // if (controllerInstance != null) {
+        //     controllerInstance.log("[State] Added new state name: '" + newName + "'. All current names: " + stateNames);
+        // }
         setLabelText(newName);
+
+        // - Notify DFA instance about the name change
+        if (State.dfaInstance != null) {
+            State.dfaInstance.stateNameChanged(this, oldName, newName);
+        }
     }
 
-    // --- Accepting State Methods ---
+    // - Check if state is an accepting state
     public boolean isAccepting() {
         return accepting;
     }
 
+    // - Update accepting state status and visual indicator
     public void setAccepting(boolean accepting) {
+        if (this.accepting == accepting) return; // No change
         this.accepting = accepting;
-        updateAcceptingIndicator();
+        updateAcceptingIndicatorVisuals();
+        // DFA instance will handle notifying controller if needed
     }
 
-    // --- Transition Management ---
+    // - Check if state is the initial state
+    public boolean isInitial() {
+        return isInitial;
+    }
+
+    // - Update initial state status and visual indicator
+    // - NOTE: This method ONLY updates the state's internal flag and visuals.
+    // - The DFA class is responsible for ensuring only ONE state has isInitial=true.
+    public void setAsInitial(boolean isInitial) {
+        if (this.isInitial == isInitial) return; // No change
+        this.isInitial = isInitial;
+        updateInitialIndicatorVisuals();
+        // DFA instance will handle notifying controller if needed
+    }
+
+    // - Create the visual indicator for accepting state (a double circle)
+    private void createAcceptingIndicator() {
+        acceptingIndicator = new Circle(0, 0, mainCircle.getRadius() + 4); // Slightly larger radius
+        acceptingIndicator.setFill(Color.TRANSPARENT);
+        acceptingIndicator.setStroke(Color.BLACK); // Use black for consistency
+        acceptingIndicator.setStrokeWidth(mainCircle.getStrokeWidth()); // Match main circle stroke width
+        acceptingIndicator.setMouseTransparent(true); // Ignore mouse events
+        acceptingIndicator.setVisible(false); // Initially hidden
+        getChildren().add(0, acceptingIndicator); // Add behind main circle
+    }
+
+    // - Update visibility of the accepting indicator
+    private void updateAcceptingIndicatorVisuals() {
+        Platform.runLater(() -> {
+            if (acceptingIndicator != null) {
+                 acceptingIndicator.setVisible(this.accepting);
+            }
+        });
+    }
+
+    // - Create the visual indicator for the initial state (an arrow)
+    private void createInitialIndicator() {
+        double radius = mainCircle.getRadius();
+        double arrowSize = radius * 0.6; // Adjust size as needed
+        double arrowX = -radius - arrowSize * 1.2; // Position left of the main circle
+        double arrowY = 0; // Center vertically relative to the state center
+
+        initialIndicator = new Polygon();
+        // Define points for a simple triangle pointing right towards the state
+        initialIndicator.getPoints().addAll(
+            arrowX, arrowY,                     // Left point (base center)
+            arrowX + arrowSize, arrowY - arrowSize / 2, // Top right point
+            arrowX + arrowSize, arrowY + arrowSize / 2  // Bottom right point
+        );
+        initialIndicator.setFill(Color.DARKGREEN); // Use a distinct color
+        initialIndicator.setMouseTransparent(true);
+        initialIndicator.setVisible(false); // Initially hidden
+        getChildren().add(initialIndicator); // Add to the group
+    }
+
+    // - Update visibility of the initial state indicator
+    private void updateInitialIndicatorVisuals() {
+        Platform.runLater(() -> {
+            if (initialIndicator != null) {
+                initialIndicator.setVisible(this.isInitial);
+            }
+        });
+    }
+
+    // - Remove a transition from this state
     public void removeTransition(Transition transition) {
         if (transition != null) {
             transitions.remove(transition);
+            // Optionally remove transition visual from parent pane if needed
         }
     }
 
-    public void removeTransition(String symbol, State nextState) {
-        transitions.removeIf(t -> t.getSymbol().equals(symbol) && Objects.equals(t.getNextState(), nextState));
+    // - Add a transition to this state
+    public void addTransition(Transition transition) {
+        if (transition != null && !transitions.contains(transition)) {
+            transitions.add(transition);
+        }
     }
 
+    // - Remove transition by symbol and target state
+    public void removeTransition(String symbol, State nextState) {
+        transitions.removeIf(t -> t.getSymbol().equals(symbol) && Objects.equals(t.getNextState(), nextState));
+        // Need to handle removing the visual transition element as well
+    }
+
+    // - Get all transitions (immutable list)
     public List<Transition> getTransitions() {
         return Collections.unmodifiableList(transitions);
     }
 
+    // - Get transitions with specific symbol
     public List<Transition> getTransitions(String symbol) {
         return transitions.stream()
                 .filter(t -> t.getSymbol().equals(symbol))
                 .collect(Collectors.toList());
     }
 
+    // - Get first transition with specific symbol
     public Transition getTransition(String symbol) {
         return transitions.stream()
                 .filter(t -> t.getSymbol().equals(symbol))
                 .findFirst().orElse(null);
     }
 
-    // --- Movement Methods ---
+    // - Clears all transitions associated with this state (visual objects are still on pane)
+    public void clearTransitions() {
+        this.transitions.clear();
+    }
+
+    // - Removes transitions from this state that point to a specific target state
+    // - Collects the removed visual transition objects into the provided list
+    public void removeTransitionsToState(State targetState, List<Transition> collectedTransitions) {
+        // Collect transitions that point to targetState and remove them from this state's list
+        List<Transition> removed = new ArrayList<>();
+        this.transitions.removeIf(t -> {
+            boolean matches = Objects.equals(t.getNextState(), targetState);
+            if (matches) {
+                removed.add(t);
+            }
+            return matches;
+        });
+        collectedTransitions.addAll(removed);
+    }
+
+    // - Move state to new position
     public void moveState(double newX, double newY) {
         setLayoutX(newX);
         setLayoutY(newY);
+        // Update outgoing/incoming transitions visuals?
     }
 
+    // - Animate state movement with easing
     public void animateMoveState(double newX, double newY, double durationMillis) {
         Timeline timeline = new Timeline();
         KeyValue kvX = new KeyValue(layoutXProperty(), newX, Interpolator.EASE_BOTH);
@@ -169,78 +344,105 @@ private final boolean selected = false;
         timeline.play();
     }
 
-    // --- Selection Methods ---
+    // - Select this state (deselecting any previously selected state)
     public void select() {
-        if (selectedState != null && selectedState != this) {
-            selectedState.deselect();
-        }
-        selectedState = this;
-        mainCircle.setStroke(Color.BLUE);
-        ScaleTransition scaleUp = new ScaleTransition(Duration.millis(200), this);
-        scaleUp.setToX(1.1);
-        scaleUp.setToY(1.1);
-        scaleUp.play();
-
-        editableLabel.startEditing();
-        if (selectionListener != null) {
-            selectionListener.onSelected(this);
-        }
-
-        offsetX = mainCircle.getRadius();
-        offsetY = mainCircle.getRadius();
-
-        // Configure dragging.
-        this.setOnMousePressed(e -> {
-            if (e.getButton() == MouseButton.PRIMARY) {
-                dragDeltaX = e.getSceneX() - getLayoutX();
-                dragDeltaY = e.getSceneY() - getLayoutY();
-                requestFocus();
-                e.consume();
+        Platform.runLater(() -> {
+            if (selectedState != null && selectedState != this) {
+                selectedState.deselect();
             }
-        });
-        this.setOnMouseDragged(e -> {
-            if (e.getButton() == MouseButton.PRIMARY) {
-                double newX = e.getSceneX() - dragDeltaX;
-                double newY = e.getSceneY() - dragDeltaY;
-                moveState(newX, newY);
-                e.consume();
+            selectedState = this;
+            wasJustDragged = false; // Reset flag on selection
+            mainCircle.setStroke(Color.BLUE);
+            ScaleTransition scaleUp = new ScaleTransition(Duration.millis(200), this);
+            scaleUp.setToX(1.1);
+            scaleUp.setToY(1.1);
+            scaleUp.play();
+
+            editableLabel.startEditing();
+
+            if (editableLabel.getEditor() != null) {
+                editableLabel.getEditor().setOnAction(event -> {
+                    this.deselect(); 
+                    event.consume();
+                });
+            } else {
+                // System.err.println("Warning: Editor TextField not available immediately after startEditing in select()");
             }
+
+            if (selectionListener != null) {
+                selectionListener.onSelected(this);
+            }
+
+            // --- Restore original press/drag/release handlers for movement & flag setting ---
+            this.setOnMousePressed(e -> {
+                if (e.getButton() == MouseButton.PRIMARY) {
+                    wasJustDragged = false; // Ensure flag is false when press starts
+                    dragDeltaX = e.getSceneX() - getLayoutX();
+                    dragDeltaY = e.getSceneY() - getLayoutY();
+                    requestFocus(); 
+                    // Request focus on editor after a short delay
+                    Platform.runLater(() -> {
+                        if (editableLabel.getEditor() != null) {
+                             editableLabel.getEditor().requestFocus();
+                         }
+                     });
+                    e.consume();
+                }
+            });
+
+            this.setOnMouseDragged(e -> {
+                if (e.getButton() == MouseButton.PRIMARY) {
+                     double newX = e.getSceneX() - dragDeltaX;
+                     double newY = e.getSceneY() - dragDeltaY;
+                     moveState(newX, newY);
+                     // Transitions should update automatically via listeners added in Transition constructor
+                     e.consume();
+                }
+             });
+
+            // Set flag on mouse release, reset it shortly after
+            this.setOnMouseReleased(e -> {
+                 if (e.getButton() == MouseButton.PRIMARY) {
+                     wasJustDragged = true;
+                     // Reset the flag after the current event processing is done
+                     Platform.runLater(() -> {
+                         wasJustDragged = false;
+                     });
+                     e.consume(); 
+                 }
+            });
         });
     }
 
-    /**
-     * The deselection method will validate the current name (from the editable label).
-     * If the name is invalid (empty, null, or duplicate) it shows an alert and keeps the state selected.
-     */
+    // - Deselect this state, validating name first
     public void deselect() {
-        if (!finalizeName()) {
-            keepInSelectionMode();
-            return;
-        }
-        commitDeselection();
+        Platform.runLater(() -> {
+            if (!finalizeName()) {
+                keepInSelectionMode();
+                return;
+            }
+            commitDeselection();
+        });
     }
 
-    // --- Name Finalization Helpers ---
-    /**
-     * Validates and commits the text from the editable label.
-     * @return true if the name is valid and finalized, false otherwise.
-     */
+    // - Validate and save the current name
     private boolean finalizeName() {
         String proposedName = editableLabel.getText();
         if (isInvalidName(proposedName)) {
             showInvalidNameAlert(proposedName);
             return false;
         }
-        updateName(proposedName);
+        // setName handles updating the model and notifying DFA
+        setName(proposedName);
         editableLabel.finalizeLabel();
-        editableLabel.getEditor().setOnAction(null);
+        // Remove Enter listener
+        if(editableLabel.getEditor() != null) {
+             editableLabel.getEditor().setOnAction(null);
+         }
         return true;
     }
 
-    /**
-     * Checks if the name candidate is invalid.
-     * A candidate is considered invalid if it is null, empty, or (if changed) already exists.
-     */
+    // - Check if name is invalid
     private boolean isInvalidName(String candidate) {
         if (isNullOrEmpty(candidate)) {
             return true;
@@ -252,9 +454,7 @@ private final boolean selected = false;
         return false;
     }
 
-    /**
-     * Displays an alert corresponding to the detected name error.
-     */
+    // - Show alert for invalid name
     private void showInvalidNameAlert(String candidate) {
         if (isNullOrEmpty(candidate)) {
             showAlert("Invalid State Name", "State name cannot be empty. Please enter a valid name.");
@@ -263,31 +463,14 @@ private final boolean selected = false;
         }
     }
 
-    /**
-     * Updates the internal name and corresponding UI elements.
-     */
-    private void updateName(String newName) {
-        if (!newName.equals(this.name)) {
-            if (!isNullOrEmpty(this.name)) {
-                stateNames.remove(this.name);
-            }
-            this.name = newName;
-            stateNames.add(newName);
-            setLabelText(newName);
-        }
-    }
-
-    /**
-     * Keeps the state in selection mode by restarting editing and maintaining the visual style.
-     */
+    // - Prevent deselection and keep editing
     private void keepInSelectionMode() {
+        // Ensure editing is restarted and editor is visible
         Platform.runLater(editableLabel::startEditing);
-        mainCircle.setStroke(Color.BLUE);
+        mainCircle.setStroke(Color.BLUE); // Keep visual selection cue
     }
 
-    /**
-     * Completes the deselection process, updating visual cues and clearing interaction handlers.
-     */
+    // - Complete the deselection process
     private void commitDeselection() {
         mainCircle.setStroke(Color.BLACK);
         ScaleTransition scaleDown = new ScaleTransition(Duration.millis(200), this);
@@ -295,61 +478,66 @@ private final boolean selected = false;
         scaleDown.setToY(1.0);
         scaleDown.play();
 
+        editableLabel.finalizeLabel(); // Make sure label is finalized visually
+
         if (selectedState == this) {
             selectedState = null;
         }
         if (selectionListener != null) {
             selectionListener.onDeselected(this);
         }
+        // Remove interaction handlers
         this.setOnMousePressed(null);
-        this.setOnMouseDragged(null);
+        this.setOnMouseDragged(null); 
+        this.setOnMouseReleased(null); // Make sure release handler is removed
+        
+         // Ensure Enter key listener is removed
+        if(editableLabel.getEditor() != null) {
+             editableLabel.getEditor().setOnAction(null);
+         }
     }
 
-    // --- Deletion ---
+    // - Delete this state and its transitions
     public void deleteState() {
-        if (!isNullOrEmpty(name)) {
-            stateNames.remove(name);
+        // Deselect this state first to update UI before removal
+        deselect(); // This will also finalize name and clear settings tab if selected
+
+        // Notify DFA to handle removal from model and UI (including associated transitions)
+        if (State.dfaInstance != null) {
+            State.dfaInstance.removeState(this);
         }
-        transitions.clear();
-        if (getParent() instanceof Group) {
-            ((Group)getParent()).getChildren().remove(this);
-        }
+        // UI removal (from pane) and static name set removal are now handled by DFA.removeState()
+        // No need for direct pane.getChildren().remove(this) or stateNames.remove(name) here.
     }
 
-    // --- Label Management ---
+    // - Update the label text and position
     private void setLabelText(String text) {
         editableLabel.setText(text);
+        // Use Platform.runLater to ensure bounds are calculated after layout pass
         Platform.runLater(() -> {
+            // Ensure label is temporarily visible for bounds calculation
+            boolean wasVisible = editableLabel.isVisible();
+            if (!wasVisible) editableLabel.setVisible(true);
             editableLabel.applyCss();
             editableLabel.layout();
             double labelWidth = editableLabel.getLabelWidth();
             double labelHeight = editableLabel.getLabelHeight();
-            editableLabel.setLabelPosition(-labelWidth / 2, -labelHeight / 2);
+            if (!wasVisible) editableLabel.setVisible(false);
+            
+            // Center the label within the state group (0,0)
+            double labelX = -labelWidth / 2.0;
+            double labelY = -labelHeight / 2.0;
+            editableLabel.setLabelPosition(labelX, labelY); 
+            editableLabel.setEditorPosition(labelX, labelY);
         });
     }
 
-    // --- Accepting Indicator ---
-    private void updateAcceptingIndicator() {
-        if (accepting) {
-            if (acceptingIndicator == null) {
-                acceptingIndicator = new Circle(0, 0, mainCircle.getRadius() + 4);
-                acceptingIndicator.setFill(Color.TRANSPARENT);
-                acceptingIndicator.setStroke(Color.GREEN);
-                acceptingIndicator.getStrokeDashArray().addAll(4.0, 4.0);
-                // Place the indicator behind the main circle.
-                getChildren().add(0, acceptingIndicator);
-            }
-        } else if (acceptingIndicator != null) {
-            getChildren().remove(acceptingIndicator);
-            acceptingIndicator = null;
-        }
-    }
-
-    // --- Utility Methods ---
+    // - Utility to check for null or empty string
     private boolean isNullOrEmpty(String str) {
         return str == null || str.trim().isEmpty();
     }
 
+    // - Display alert dialog with given title and content
     private void showAlert(String title, String content) {
         Alert alert = new Alert(Alert.AlertType.ERROR);
         alert.setTitle(title);
@@ -358,7 +546,7 @@ private final boolean selected = false;
         alert.showAndWait();
     }
 
-    // --- Equality Overrides ---
+    // - Override for object equality comparison based on unique ID
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
@@ -367,30 +555,53 @@ private final boolean selected = false;
         return this.id == other.id;
     }
 
+    // - Override for hash code calculation based on unique ID
     @Override
     public int hashCode() {
         return Objects.hash(id);
     }
 
-    // --- Additional Getters and Methods ---
+    // - Get main circle for visual manipulation
     public Circle getMainCircle() {
         return mainCircle;
     }
 
+    // - Get the circle shape representing this state
     public Circle getCircle() {
         return mainCircle;
     }
 
+    // - Add transition directly without visual creation (used for model loading/rebuilding)
     public void addTransitionDirect(String symbol, State nextState) {
-        // Implementation for adding a direct transition can be added here.
+        // Check for duplicates before adding
+        boolean exists = transitions.stream()
+                                .anyMatch(t -> t.getSymbol().equals(symbol) && Objects.equals(t.getNextState(), nextState));
+        if (!exists) {
+            // Note: This direct addition does NOT create visual transition elements.
+            // It's intended for scenarios like loading from a file or DFA minimization rebuild.
+            // You might need a different approach if visual elements are required.
+            Transition dummyTransition = new Transition(this, symbol, nextState); // Create a non-visual representation if needed
+            this.transitions.add(dummyTransition);
+        }
     }
 
-    // In some cases you might need this alternative getter.
+    // - Alternative getter for name (legacy support, consider removing)
     public String getname() {
         return name;
     }
 
+    // - Check if state is currently selected
     public boolean isSelected() {
-        return selected  ;
+        return selectedState == this;
+    }
+
+    // - Access the editable label for this state
+    public EditableLabel getEditableLabel() {
+        return editableLabel;
+    }
+
+    // - Check if state was recently dragged
+    public boolean wasJustDragged() {
+        return wasJustDragged;
     }
 }

@@ -1,33 +1,38 @@
 package com.example.dfa_app;
-
 import com.example.dfa_app.DFA.*;
-import javafx.animation.KeyFrame;
-import javafx.animation.Timeline;
+
+import javafx.application.Platform;
+import javafx.beans.property.SimpleStringProperty;
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
+import javafx.event.EventHandler;
 import javafx.fxml.FXML;
+import javafx.fxml.FXMLLoader;
 import javafx.scene.Node;
+import javafx.scene.Parent;
+import javafx.scene.Scene;
 import javafx.scene.control.*;
+import javafx.scene.input.KeyCode;
+import javafx.scene.input.KeyEvent;
 import javafx.scene.input.MouseButton;
-import javafx.scene.input.MouseDragEvent;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.Pane;
 import javafx.scene.paint.Color;
-import javafx.scene.shape.Circle;
-import javafx.event.EventHandler;
-import javafx.util.Duration;
+import javafx.stage.Stage;
+import javafx.stage.Window;
+import java.io.IOException;
+import java.util.*;
+import java.util.stream.Collectors;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
-public class Application_Controler  implements SelectionListener  {
+
+public class Application_Controler implements SelectionListener {
+
     @FXML
     private TabPane TabPane;
     @FXML
-    private Tab transitionSettingsTab , stateSettingsTab;
+    private Tab transitionSettingsTab, stateSettingsTab;
     @FXML
     private BorderPane BorderPane;
     @FXML
@@ -35,13 +40,13 @@ public class Application_Controler  implements SelectionListener  {
     @FXML
     private CheckBox startStateCheck, acceptingStateCheck;
     @FXML
-    private ComboBox fromStateCombo, toStateCombo, transitionNameCombo;
+    private ComboBox<String> fromStateCombo, toStateCombo, transitionNameCombo;
     @FXML
-    private TableView dfaTransitionTable;
+    private TableView<State> dfaTransitionTable;
     @FXML
-    private TableColumn stateColumn;
+    private TableColumn<State, String> stateColumn;
     @FXML
-    private TableColumn transitionsParentColumn;
+    private TableColumn<State, String> transitionsParentColumn;
     @FXML
     private Pane pane;
     @FXML
@@ -49,7 +54,7 @@ public class Application_Controler  implements SelectionListener  {
     @FXML
     private TextArea logTextArea;
     @FXML
-    private Button openButton;
+    private Button clearLogButton;
     @FXML
     private Button saveButton;
     @FXML
@@ -57,266 +62,728 @@ public class Application_Controler  implements SelectionListener  {
     @FXML
     private Button newStateButton;
     @FXML
-    private Button newTransitionButton;
+    private Button clearPageButton;
     @FXML
     private Button undoButton;
     @FXML
     private Button redoButton;
 
-
-
-
-    // Hold a reference to the DFA instance.
     private DFA dfa;
     private Transition currentTransition;
-    private boolean waitingForSecondClick = false;
+    private boolean isCreatingTransition = false;
+    private boolean isPlacingNewState = false;
+
+    // Handlers for dynamic mouse events
+    private EventHandler<MouseEvent> statePlacementClickHandler;
+    private EventHandler<MouseEvent> statePlacementMouseMoveHandler;
+    private EventHandler<MouseEvent> transitionCreationMouseMoveHandler;
+
+    public void log(String message) {
+        if (logTextArea != null) {
+            Platform.runLater(() -> logTextArea.appendText(message + "\n"));
+        }
+    }
+
+    @FXML
+    private void handleClearLogButton() {
+        if (logTextArea != null) {
+            logTextArea.clear();
+        }
+    }
 
     @FXML
     public void initialize() {
-        // Initialize the DFA model.
-        dfa = new DFA();
+        System.out.println("Application_Controler initialized.");
+        dfa = new DFA(this);
 
+        setupTransitionTable();
+        updateTransitionTable();
 
-        Timeline dfaUpdater = new Timeline(
-                new KeyFrame(Duration.millis(100), event -> {
-                    logTextArea.setText(dfa.getDFAData());
-                })
-        );
-        dfaUpdater.setCycleCount(Timeline.INDEFINITE);
-        dfaUpdater.play();
-        // Global mouse click handler for creating transitions.
-        pane.addEventHandler(MouseEvent.MOUSE_CLICKED, mouseEvent -> {
-            Node clickedNode = mouseEvent.getPickResult().getIntersectedNode();
-            // If the clicked node is a state (Circle), handle state selection/deselection.
-            if (clickedNode.getUserData() instanceof State) {
-                State state = (State) clickedNode.getUserData();
-
-                // Right-click or secondary button toggles selection.
-                if (mouseEvent.getButton() == MouseButton.SECONDARY) {
-                    if (state.isSelected()) {
-                        state.deselect();
-                    } else {
-                        state.select();
-                    }
-                    mouseEvent.consume();
-                    return;
+        // --- Button Setup ---
+        if (startProcessButton != null) {
+            startProcessButton.setText("Minimize DFA");
+            startProcessButton.setOnAction(event -> {
+                if (dfa != null) {
+                    dfa.minimizeDFA();
                 }
-                // Left-click (primary button) on an already selected state deselects it.
-                else if (mouseEvent.getButton() == MouseButton.PRIMARY) {
-                    if (state.isSelected()) {
-                        state.deselect();
-                        mouseEvent.consume();
-                        return;
-                    }
-                }
+            });
+        }
+
+        if (saveButton != null) {
+            saveButton.setOnAction(event -> handleSaveButton());
+        }
+
+        if (clearPageButton != null) {
+            clearPageButton.setOnAction(event -> handleClearPageButton());
+        }
+
+        if (newPageButton != null) {
+            newPageButton.setOnAction(event -> handleNewPageButton());
+        }
+
+        if (newStateButton != null) {
+            newStateButton.setOnAction(event -> handleNewStateButton());
+        }
+
+        // --- Event Handlers Setup ---
+        pane.addEventFilter(MouseEvent.MOUSE_CLICKED, this::handlePaneClick);
+        BorderPane.setOnKeyPressed(this::handleKeyPress);
+
+        // State settings tab listeners
+        stateNameTextField.setOnAction(event -> handleStateNameChange());
+        stateNameTextField.focusedProperty().addListener((obs, oldVal, newVal) -> {
+            if (!newVal) { // Focus lost
+                handleStateNameChange();
             }
+        });
+        startStateCheck.setOnAction(event -> handleStartStateCheck());
+        acceptingStateCheck.setOnAction(event -> handleAcceptingStateCheck());
 
-
-
-//            if (clickedNode.getUserData() instanceof State) {
-//                Transition transition = (Transition) clickedNode.getUserData();
-//
-//                // Right-click or secondary button toggles selection.
-//                if (mouseEvent.getButton() == MouseButton.SECONDARY) {
-//                    if (state.isSelected()) {
-//                        state.deselect();
-//                    } else {
-//                        state.select();
-//                    }
-//                    mouseEvent.consume();
-//                    return;
-//                }
-//                // Left-click (primary button) on an already selected state deselects it.
-//                else if (mouseEvent.getButton() == MouseButton.PRIMARY) {
-//                    if (state.isSelected()) {
-//                        state.deselect();
-//                        mouseEvent.consume();
-//                        return;
-//                    }
-//                }
-//            }
-
-            // If a transition is already in creation mode, then this is the second click.
-            if (waitingForSecondClick) {
-                if (clickedNode instanceof Circle) {
-                    State targetState = (State) clickedNode.getUserData();
-                    if (currentTransition != null) {
-                        System.out.println("Second click on a state. Completing transition...");
-                        currentTransition.completeTransition(targetState);
-                        // Optionally, set a selection listener if you need additional logic.
-                        currentTransition.setSelectionListener(this);
-                    }
-                }
-                waitingForSecondClick = false;
-                currentTransition = null;
-                mouseEvent.consume();
-                return;
+        // Transition settings tab listeners
+        transitionNameCombo.setOnAction(event -> handleTransitionNameChange());
+        transitionNameCombo.focusedProperty().addListener((obs, oldVal, newVal) -> {
+            if (!newVal) { // Focus lost
+                handleTransitionNameChange();
             }
-
-            // For the first click: if Ctrl is held and a state (Circle) is clicked, create a Transition.
-            if (mouseEvent.isControlDown() && clickedNode instanceof Circle) {
-                System.out.println("CTRL + click on a state. Initiating transition creation...");
-                State fromState = (State) clickedNode.getUserData();
-                currentTransition = new Transition(fromState);
-                // Attach this controller as the selection listener if needed.
-                currentTransition.setSelectionListener(this);
-                waitingForSecondClick = true;
-                mouseEvent.consume();
-                return;
-            }
-            mouseEvent.consume();
         });
 
-
-
-        // When process button is clicked, first build the DFA from current UI elements.
-        startProcessButton.setOnAction(actionEvent -> {
-            buildDFAFromPane();
-            dfa.removeUnreachableStates();
-            dfa.minimizeDFA();
-            dfa.printMinimizedDFA();
+        // Tab selection listener
+        TabPane.getSelectionModel().selectedItemProperty().addListener((obs, oldTab, newTab) -> {
+            if (newTab == stateSettingsTab) {
+                updateStateSettingsTab();
+            } else if (newTab == transitionSettingsTab) {
+                Transition selected = Transition.getSelectedTransition();
+                updateTransitionSettingsTab(selected);
+            }
         });
 
-        // Global key handlers.
-        BorderPane.setOnKeyPressed(event -> {
+        updateUIComponents();
+    }
+
+    /**
+     * Handles all key presses on the main pane.
+     */
+    private void handleKeyPress(KeyEvent event) {
+        System.out.println("Key Pressed: " + event.getCode());
+        if (event.isControlDown()) {
             switch (event.getCode()) {
                 case D:
-                    if (event.isControlDown()) {
-                        System.out.println("ctrl+d"); // Delete
-                        event.consume();
-                    }
-                    break;
-                case Z:
-                    if (event.isControlDown()) {
-                        System.out.println("ctrl+z"); // Undo
-                        event.consume();
-                    }
-                    break;
-                case Y:
-                    if (event.isControlDown()) {
-                        System.out.println("ctrl+y"); // Redo
-                        event.consume();
-                    }
-                    break;
-                case S:
-                    if (event.isControlDown()) {
-                        System.out.println("ctrl+s"); // Save file
-                        event.consume();
-                    }
-                    break;
-                case O:
-                    if (event.isControlDown()) {
-                        System.out.println("ctrl+o"); // Open file
-                        event.consume();
-                    }
-                    break;
-                case R:
-                    if (event.isControlDown()) {
-                        System.out.println("ctrl+R"); // Start minimization
-                        event.consume();
-                    }
-                    break;
-                case K:
-                    if (event.isControlDown()) {
-                        System.out.println("ctrl+k"); // Clear
-                        event.consume();
-                    }
+                    System.out.println("Ctrl+D pressed: Deleting selected object.");
+                    deleteSelectedObject();
+                    event.consume();
                     break;
                 case N:
-                    if (event.isControlDown()) {
-                        createState(); // Create a new state interactively.
-                        event.consume();
-                    }
+                    System.out.println("Ctrl+N pressed: Creating new state.");
+                    handleNewStateButton();
+                    event.consume();
+                    break;
+                case R:
+                    System.out.println("Ctrl+R pressed: Minimizing DFA.");
+                    startProcessButton.fire();
+                    event.consume();
+                    break;
+                case Z:
+                case Y:
+                case S:
+                case O:
+                case K:
+                    System.out.println("Ctrl+" + event.getCode() + " pressed: Consuming event.");
+                    event.consume();
                     break;
             }
-        });
-    }
-
-    /**
-     * Builds the DFA configuration from the states and transitions present in the pane.
-     * This method collects all State objects, gathers their transitions, builds the alphabet,
-     * and determines the set of accepting states as well as an initial state.
-     */
-    private void buildDFAFromPane() {
-        List<State> stateList = new ArrayList<>();
-        Set<String> alphabet = new HashSet<>();
-        Set<State> acceptingStates = new HashSet<>();
-        Map<State, Map<String, State>> transitionsMap = new HashMap<>();
-        State initialState = null;
-
-        // Iterate through the pane's children, filtering for State instances.
-        for (Node node : pane.getChildren()) {
-            if (node instanceof State) {
-                State s = (State) node;
-                stateList.add(s);
-                if (s.isAccepting()) {
-                    acceptingStates.add(s);
+        } else if (event.getCode() == KeyCode.ENTER) {
+            if (isPlacingNewState) {
+                System.out.println("Enter pressed: Finalizing state placement.");
+                State stateToPlace = findStateBeingPlaced();
+                if (stateToPlace != null) {
+                    finalizeNewStatePlacement(stateToPlace);
                 }
-                // For the initial state, we simply take the first one.
-                if (initialState == null) {
-                    initialState = s;
-                }
-                // Build the transitions mapping for this state.
-                Map<String, State> transMap = new HashMap<>();
-                for (Transition t : s.getTransitions()) {
-                    if (t.getSymbol() != null && t.getNextState() != null) {
-                        transMap.put(t.getSymbol(), (State) t.getNextState());
-                        alphabet.add(t.getSymbol());
-                    }
-                }
-                transitionsMap.put(s, transMap);
+                event.consume();
             }
         }
-        // Pass the assembled data to the DFA’s configuration method.
-        dfa.configureDFA(stateList, alphabet, initialState, acceptingStates, transitionsMap);
     }
 
     /**
-     * Creates a new state and allows the user to place it on the pane via mouse movement.
-     * A temporary mouse handler lets the state follow the cursor until its position is finalized.
+     * Handles all mouse clicks on the main drawing pane.
      */
-    private void createState() {
-        // Create a new state using the four-parameter constructor (name to be finalized later).
-        State newState = new State(-30, -30, 30, Color.WHITE);
+    private void handlePaneClick(MouseEvent mouseEvent) {
+        System.out.println("Pane Clicked at X: " + mouseEvent.getX() + ", Y: " + mouseEvent.getY() + ", Button: " + mouseEvent.getButton());
+        if (isPlacingNewState) {
+            System.out.println("In state placement mode, deferring to specific handler.");
+            return;
+        }
+
+        Node clickedNode = mouseEvent.getPickResult().getIntersectedNode();
+        Object userData = findUserData(clickedNode);
+        System.out.println("Clicked Node: " + clickedNode + ", UserData: " + (userData != null ? userData.getClass().getSimpleName() : "null"));
+
+        if (isCreatingTransition) {
+            System.out.println("Completing transition creation.");
+            completeTransitionCreation(clickedNode);
+            mouseEvent.consume();
+            return;
+        }
+
+        if (mouseEvent.getButton() == MouseButton.SECONDARY) {
+            if (userData instanceof State) {
+                System.out.println("Right-clicked on State: " + ((State) userData).getName());
+                ((State) userData).select();
+                mouseEvent.consume();
+            } else if (userData instanceof Transition) {
+                System.out.println("Right-clicked on Transition.");
+                ((Transition) userData).select();
+                mouseEvent.consume();
+            }
+            return;
+        }
+
+        if (mouseEvent.isControlDown() && mouseEvent.getButton() == MouseButton.PRIMARY) {
+            if (userData instanceof State) {
+                System.out.println("Ctrl+Primary click on State: Starting transition creation.");
+                startTransitionCreation((State) userData);
+                mouseEvent.consume();
+            }
+            return;
+        }
+
+        if (!mouseEvent.isConsumed() && clickedNode == pane) {
+            System.out.println("Clicked on pane: Deselecting all.");
+            deselectAll();
+            mouseEvent.consume();
+        }
+    }
+
+    /**
+     * Starts the two-click process of creating a new transition.
+     */
+    private void startTransitionCreation(State fromState) {
+        System.out.println("Starting transition creation from state: " + fromState.getName());
+        isCreatingTransition = true;
+        currentTransition = new Transition(fromState, this.dfa, this);
+
+        transitionCreationMouseMoveHandler = moveEvent -> {
+            if (currentTransition != null) {
+                currentTransition.setTempEnd(moveEvent.getX(), moveEvent.getY());
+            }
+            moveEvent.consume();
+        };
+        pane.setOnMouseMoved(transitionCreationMouseMoveHandler);
+    }
+
+    /**
+     * Completes the transition creation process on the second click.
+     */
+    private void completeTransitionCreation(Node clickedNode) {
+        System.out.println("Completing transition creation.");
+        pane.setOnMouseMoved(null);
+        transitionCreationMouseMoveHandler = null;
+        isCreatingTransition = false;
+
+        deselectAll();
+
+        Object userData = findUserData(clickedNode);
+        if (userData instanceof State) {
+            State targetState = (State) userData;
+            System.out.println("Transition target state: " + targetState.getName());
+            if (currentTransition != null) {
+                currentTransition.completeTransition(targetState);
+                currentTransition.getFromState().addTransition(currentTransition);
+
+                dfa.addState(currentTransition.getFromState());
+                dfa.addState(targetState);
+                dfa.addOrUpdateTransition(currentTransition.getFromState(), currentTransition.getSymbol(), targetState);
+
+                updateUIComponents();
+                System.out.println("Transition created: " + currentTransition.getFromState().getName() + " --(" + currentTransition.getSymbol() + ")--> " + currentTransition.getNextState().getName());
+            }
+        } else {
+            System.out.println("Second click not on a state. Cancelling transition creation.");
+            if (currentTransition != null) {
+                pane.getChildren().remove(currentTransition);
+            }
+        }
+        currentTransition = null;
+    }
+
+    /**
+     * Handles the "New State" button action, entering state placement mode.
+     */
+    @FXML
+    private void handleNewStateButton() {
+        System.out.println("New State button clicked. Entering placement mode.");
+        if (isPlacingNewState) {
+            System.out.println("Already in state placement mode. Ignoring.");
+            return;
+        }
+        isPlacingNewState = true;
+
+        State newState = new State(-100, -100, 30, Color.WHITE, Color.BLACK, 1.0, this);
         newState.setSelectionListener(this);
         pane.getChildren().add(newState);
         newState.select();
 
-        // Handler to have the state follow the mouse.
-        EventHandler<MouseEvent> mouseMoveHandler = event -> {
-            newState.moveState(event.getX(), event.getY());
-            event.consume();
+        statePlacementMouseMoveHandler = moveEvent -> {
+            newState.moveState(moveEvent.getX(), moveEvent.getY());
+            moveEvent.consume();
         };
-        pane.setOnMouseMoved(mouseMoveHandler);
+        pane.setOnMouseMoved(statePlacementMouseMoveHandler);
 
-        // First-click freezes the state's position and checks for overlap.
-        EventHandler<MouseEvent> firstClickHandler = event -> {
-            pane.setOnMouseMoved(null); // Stop moving with the mouse.
-            if (isOverlapping(newState)) {
-                showOverlapError();
-                // If the placement is invalid, re-enable movement.
-                pane.setOnMouseMoved(mouseMoveHandler);
-                return;
+        statePlacementClickHandler = mouseEvent -> {
+            if (mouseEvent.getButton() == MouseButton.PRIMARY) {
+                System.out.println("Primary click to finalize new state placement.");
+                finalizeNewStatePlacement(newState);
+                mouseEvent.consume();
             }
-            pane.setOnMouseClicked(null); // Remove this temporary handler.
-            // Final click handler to finalize the state (e.g., complete label editing).
-            pane.setOnMouseClicked(finalClickEvent -> {
-                newState.deselect(); // Finalizes the label with validations.
-                pane.setOnMouseClicked(null);
-                finalClickEvent.consume();
-            });
-            event.consume();
         };
+        pane.setOnMouseClicked(statePlacementClickHandler);
 
-        pane.setOnMouseClicked(firstClickHandler);
-        System.out.println("New state added to the pane.");
+        if (newState.getEditableLabel().getEditor() != null) {
+            newState.getEditableLabel().getEditor().setOnAction(actionEvent -> {
+                System.out.println("Enter pressed on state name editor: Finalizing placement.");
+                finalizeNewStatePlacement(newState);
+                actionEvent.consume();
+            });
+        }
     }
 
     /**
-     * Checks whether the provided newState overlaps with any existing states on the pane.
+     * Finalizes the position of a new state, checking for overlaps and adding it to the DFA.
      */
+    private void finalizeNewStatePlacement(State newState) {
+        System.out.println("Finalizing new state placement for state: " + newState.getName());
+        pane.setOnMouseMoved(null);
+        pane.setOnMouseClicked(null);
+        if (newState.getEditableLabel().getEditor() != null) {
+            newState.getEditableLabel().getEditor().setOnAction(null);
+        }
+        statePlacementMouseMoveHandler = null;
+        statePlacementClickHandler = null;
+
+        if (isOverlapping(newState)) {
+            System.out.println("New state overlaps with existing state. Cancelling placement.");
+            showOverlapError();
+            pane.getChildren().remove(newState);
+            isPlacingNewState = false;
+            return;
+        }
+
+        deselectAll();
+        newState.deselect();
+
+        dfa.addState(newState);
+        updateUIComponents();
+        isPlacingNewState = false;
+        System.out.println("New state placed: " + newState.getName() + " at (" + newState.getLayoutX() + ", " + newState.getLayoutY() + ")");
+    }
+
+
+    @Override
+    public void onSelected(Object selectedObject) {
+        System.out.println("Object selected: " + (selectedObject != null ? selectedObject.getClass().getSimpleName() : "null"));
+        if (selectedObject instanceof State) {
+            if (Transition.getSelectedTransition() != null) {
+                System.out.println("Deselecting previously selected transition.");
+                Transition.getSelectedTransition().deselect();
+            }
+            updateStateSettingsTab();
+            clearTransitionSettingsTab();
+            TabPane.getSelectionModel().select(stateSettingsTab);
+            System.out.println("Selected object is State: " + ((State) selectedObject).getName());
+        } else if (selectedObject instanceof Transition) {
+            if (State.getSelectedState() != null) {
+                System.out.println("Deselecting previously selected state.");
+                State.getSelectedState().deselect();
+            }
+            updateTransitionSettingsTab((Transition) selectedObject);
+            clearStateSettingsTab();
+            TabPane.getSelectionModel().select(transitionSettingsTab);
+            System.out.println("Selected object is Transition: " + ((Transition) selectedObject).getSymbol());
+        } else {
+            System.out.println("Selected object is neither State nor Transition. Clearing tabs.");
+            clearStateSettingsTab();
+            clearTransitionSettingsTab();
+        }
+    }
+
+    @Override
+    public void onDeselected(Object deselectedObject) {
+        System.out.println("Object deselected: " + (deselectedObject != null ? deselectedObject.getClass().getSimpleName() : "null"));
+        clearStateSettingsTab();
+        clearTransitionSettingsTab();
+    }
+
+    private void updateStateSettingsTab() {
+        System.out.println("Updating State Settings Tab.");
+        State selected = State.getSelectedState();
+        if (selected != null) {
+            stateNameTextField.setText(selected.getName());
+            startStateCheck.setSelected(selected.isInitial());
+            acceptingStateCheck.setSelected(selected.isAccepting());
+            System.out.println("State settings updated for: " + selected.getName());
+        } else {
+            clearStateSettingsTab();
+            System.out.println("No state selected, clearing state settings tab.");
+        }
+    }
+
+    private void updateTransitionSettingsTab(Transition selected) {
+        System.out.println("Updating Transition Settings Tab.");
+        if (selected != null) {
+            String fromName = selected.getFromState().getName();
+            String toName = (selected.getNextState() != null) ? selected.getNextState().getName() : null;
+            String symbolName = selected.getSymbol();
+
+            fromStateCombo.getSelectionModel().select(fromName);
+            toStateCombo.getSelectionModel().select(toName);
+            transitionNameCombo.setValue(symbolName);
+
+            // From/To states cannot be changed from the settings panel
+            fromStateCombo.setDisable(true);
+            toStateCombo.setDisable(true);
+            System.out.println("Transition settings updated for transition: " + symbolName + " from " + fromName + " to " + toName);
+        } else {
+            clearTransitionSettingsTab();
+            System.out.println("No transition selected, clearing transition settings tab.");
+        }
+    }
+
+    private void clearStateSettingsTab() {
+        System.out.println("Clearing State Settings Tab.");
+        stateNameTextField.setText("");
+        startStateCheck.setSelected(false);
+        acceptingStateCheck.setSelected(false);
+    }
+
+    private void clearTransitionSettingsTab() {
+        System.out.println("Clearing Transition Settings Tab.");
+        fromStateCombo.getSelectionModel().clearSelection();
+        toStateCombo.getSelectionModel().clearSelection();
+        transitionNameCombo.setValue("");
+        fromStateCombo.setDisable(false);
+        toStateCombo.setDisable(false);
+    }
+
+    private void handleStateNameChange() {
+        System.out.println("Handling state name change.");
+        State selected = State.getSelectedState();
+        String newName = stateNameTextField.getText().trim();
+        if (selected != null && !newName.isEmpty() && !newName.equals(selected.getName())) {
+            System.out.println("Attempting to change state name from " + selected.getName() + " to " + newName);
+            selected.setName(newName);
+            // If the name was invalid (e.g., duplicate), UI will revert it.
+            if (!selected.getName().equals(newName)) {
+                stateNameTextField.setText(selected.getName());
+                System.out.println("State name change failed, reverted to: " + selected.getName());
+            } else {
+                System.out.println("State name changed successfully to: " + newName);
+            }
+        } else if (selected == null) {
+            System.out.println("No state selected for name change.");
+        } else if (newName.isEmpty()) {
+            System.out.println("New state name is empty.");
+        } else if (newName.equals(selected.getName())) {
+            System.out.println("New state name is the same as old name.");
+        }
+    }
+
+    private void handleStartStateCheck() {
+        System.out.println("Handling start state checkbox.");
+        State selected = State.getSelectedState();
+        if (selected != null) {
+            boolean isChecked = startStateCheck.isSelected();
+            if (isChecked) {
+                System.out.println("Setting state " + selected.getName() + " as initial.");
+                dfa.setInitialState(selected);
+            } else {
+                // Prevent deselecting the only initial state
+                if (selected.equals(dfa.getInitialState())) {
+                    startStateCheck.setSelected(true);
+                    showAlert(Alert.AlertType.INFORMATION, "Initial State", "Cannot deselect the initial state. Select another state to be the new initial state.");
+                    System.out.println("Cannot deselect initial state: " + selected.getName());
+                } else {
+                    System.out.println("Deselecting initial state (not implemented yet).");
+                }
+            }
+        } else {
+            System.out.println("No state selected for start state change.");
+        }
+    }
+
+    private void handleAcceptingStateCheck() {
+        System.out.println("Handling accepting state checkbox.");
+        State selected = State.getSelectedState();
+        if (selected != null) {
+            boolean isChecked = acceptingStateCheck.isSelected();
+            if (isChecked) {
+                System.out.println("Adding state " + selected.getName() + " to accepting states.");
+                dfa.addAcceptingState(selected);
+            } else {
+                System.out.println("Removing state " + selected.getName() + " from accepting states.");
+                dfa.removeAcceptingState(selected);
+            }
+        } else {
+            System.out.println("No state selected for accepting state change.");
+        }
+    }
+
+    private void handleTransitionNameChange() {
+        System.out.println("Handling transition name change.");
+        Transition selected = Transition.getSelectedTransition();
+        if (selected != null) {
+            String newSymbol = transitionNameCombo.getValue();
+            if (newSymbol != null && !newSymbol.equals(selected.getSymbol())) {
+                System.out.println("Attempting to change transition symbol from " + selected.getSymbol() + " to " + newSymbol);
+                selected.setSymbol(newSymbol);
+                // If symbol was invalid, UI will revert it.
+                transitionNameCombo.setValue(selected.getSymbol());
+                if (!selected.getSymbol().equals(newSymbol)) {
+                    System.out.println("Transition symbol change failed, reverted to: " + selected.getSymbol());
+                } else {
+                    System.out.println("Transition symbol changed successfully to: " + newSymbol);
+                }
+            } else if (newSymbol == null) {
+                System.out.println("New transition symbol is null.");
+            } else if (newSymbol.equals(selected.getSymbol())) {
+                System.out.println("New transition symbol is the same as old symbol.");
+            }
+        } else {
+            System.out.println("No transition selected for symbol change.");
+        }
+    }
+
+    public void updateUIComponents() {
+        System.out.println("Updating UI Components.");
+        Platform.runLater(() -> {
+            updateTransitionTable();
+            updateComboBoxes();
+            System.out.println("UI Components updated.");
+        });
+    }
+
+    private void setupTransitionTable() {
+        System.out.println("Setting up Transition Table.");
+        stateColumn.setCellValueFactory(cellData -> new SimpleStringProperty(cellData.getValue().getName()));
+        stateColumn.setStyle("-fx-alignment: CENTER;");
+        transitionsParentColumn.setStyle("-fx-alignment: CENTER;");
+    }
+
+    public void updateTransitionTable() {
+        System.out.println("Updating Transition Table.");
+        Platform.runLater(() -> {
+            if (dfa == null || dfaTransitionTable == null) {
+                System.out.println("DFA or dfaTransitionTable is null, cannot update table.");
+                return;
+            }
+
+            dfaTransitionTable.getItems().clear();
+            transitionsParentColumn.getColumns().clear();
+
+            Set<String> alphabet = dfa.getAlphabet();
+            Set<State> states = dfa.getStates();
+
+            if (alphabet == null || states == null) {
+                System.out.println("Alphabet or states is null, cannot update table.");
+                return;
+            }
+
+            // Get a sorted list of non-empty alphabet symbols
+            List<String> sortedAlphabet = new ArrayList<>(alphabet);
+            sortedAlphabet.removeIf(s -> s == null || s.trim().isEmpty() || s.equals("?"));
+            Collections.sort(sortedAlphabet);
+
+            // Create a column for each symbol
+            for (String symbol : sortedAlphabet) {
+                TableColumn<State, String> symbolColumn = new TableColumn<>(symbol);
+                symbolColumn.setCellValueFactory(cellData -> {
+                    State currentState = cellData.getValue();
+                    String destinationStateName = "-"; // Default display
+
+                    Transition transition = currentState.getTransition(symbol);
+                    if (transition != null && transition.getNextState() != null) {
+                        destinationStateName = transition.getNextState().getName();
+                    } else {
+                    }
+                    return new SimpleStringProperty(destinationStateName);
+                });
+                symbolColumn.setPrefWidth(75);
+                symbolColumn.setStyle("-fx-alignment: CENTER;");
+                transitionsParentColumn.getColumns().add(symbolColumn);
+                System.out.println("Added column for symbol: " + symbol);
+            }
+
+            dfaTransitionTable.setItems(FXCollections.observableArrayList(states));
+            System.out.println("Transition table updated with " + states.size() + " states.");
+        });
+    }
+
+    public void updateComboBoxes() {
+        System.out.println("Updating ComboBoxes.");
+        if (dfa == null) {
+            System.out.println("DFA is null, cannot update combo boxes.");
+            return;
+        }
+
+        List<String> stateNames = dfa.getStates().stream()
+                .map(State::getName)
+                .filter(name -> name != null && !name.isEmpty())
+                .sorted()
+                .collect(Collectors.toList());
+
+        ObservableList<String> observableStateNames = FXCollections.observableArrayList(stateNames);
+
+        // Preserve selection if possible
+        String selectedFrom = fromStateCombo.getSelectionModel().getSelectedItem();
+        String selectedTo = toStateCombo.getSelectionModel().getSelectedItem();
+
+        fromStateCombo.setItems(observableStateNames);
+        toStateCombo.setItems(observableStateNames);
+
+        fromStateCombo.getSelectionModel().select(selectedFrom);
+        toStateCombo.getSelectionModel().select(selectedTo);
+        System.out.println("ComboBoxes updated with " + stateNames.size() + " state names.");
+    }
+
+    private void deleteSelectedObject() {
+        System.out.println("Attempting to delete selected object.");
+        Transition selectedTransition = Transition.getSelectedTransition();
+        State selectedState = State.getSelectedState();
+
+        if (selectedTransition != null) {
+            System.out.println("Deleting selected transition.");
+            deleteTransition(selectedTransition);
+        } else if (selectedState != null) {
+            System.out.println("Deleting selected state: " + selectedState.getName());
+            selectedState.deleteState();
+        } else {
+            System.out.println("No object selected for deletion.");
+        }
+    }
+
+    public void deleteTransition(Transition transition) {
+        System.out.println("Deleting transition: " + transition.getSymbol() + " from " + transition.getFromState().getName());
+        if (transition == null) return;
+
+        if (transition == Transition.getSelectedTransition()) {
+            transition.deselect();
+            clearTransitionSettingsTab();
+        }
+
+        pane.getChildren().remove(transition);
+        transition.getFromState().removeTransition(transition);
+
+        updateUIComponents();
+        System.out.println("Transition deleted.");
+    }
+
+    @FXML
+    private void handleClearPageButton() {
+        System.out.println("Clear Page button clicked. Clearing DFA and pane.");
+        dfa.clear();
+        pane.getChildren().clear();
+        updateUIComponents();
+        System.out.println("Page cleared.");
+    }
+
+    @FXML
+    private void handleNewPageButton() {
+        System.out.println("New Page button clicked. Opening new window.");
+        try {
+            FXMLLoader fxmlLoader = new FXMLLoader(getClass().getResource("Main_DFA.fxml"));
+            Parent root = fxmlLoader.load();
+            Application_Controler newController = fxmlLoader.getController();
+            newController.setLogTextArea(new TextArea());
+
+            Stage stage = new Stage();
+            stage.setTitle("DFA Application - New Page");
+            stage.setScene(new Scene(root, 1280, 720));
+            stage.show();
+            System.out.println("Opened new DFA window.");
+        } catch (IOException e) {
+            System.err.println("Failed to open new window: " + e.getMessage());
+            e.printStackTrace();
+        }
+    }
+
+    public void handleSaveButton() {
+        System.out.println("Save button clicked. Attempting to save DFA.");
+        if (dfa != null) {
+            Window ownerWindow = pane.getScene().getWindow();
+            DFAI_O.saveDFA(dfa, ownerWindow);
+            System.out.println("DFA saved successfully.");
+        } else {
+            System.out.println("DFA is null, cannot save.");
+        }
+    }
+
+    public void handleInitialStateChange(State oldInitial, State newInitial) {
+        System.out.println("Handling initial state change. Old: " + (oldInitial != null ? oldInitial.getName() : "null") + ", New: " + (newInitial != null ? newInitial.getName() : "null"));
+        // Update UI if the selected state was affected
+        State currentlySelected = State.getSelectedState();
+        if (currentlySelected != null && (currentlySelected.equals(oldInitial) || currentlySelected.equals(newInitial))) {
+            updateStateSettingsTab();
+            System.out.println("Selected state was affected by initial state change, updating tab.");
+        }
+    }
+
+    public void handleAcceptingStateChange(State changedState) {
+        System.out.println("Handling accepting state change for state: " + (changedState != null ? changedState.getName() : "null"));
+        // Update UI if the selected state was the one that changed
+        if (changedState != null && changedState.equals(State.getSelectedState())) {
+            updateStateSettingsTab();
+            System.out.println("Selected state was changed, updating tab.");
+        }
+    }
+
+    public Pane getPane() {
+        System.out.println("getPane() called.");
+        return pane;
+    }
+
+    public void setLogTextArea(TextArea logTextArea) {
+        System.out.println("setLogTextArea() called.");
+        this.logTextArea = logTextArea;
+    }
+
+    // --- Helper Methods ---
+
+    private void deselectAll() {
+        System.out.println("Deselecting all objects.");
+        if (State.getSelectedState() != null) {
+            State.getSelectedState().deselect();
+        }
+        if (Transition.getSelectedTransition() != null) {
+            Transition.getSelectedTransition().deselect();
+        }
+    }
+
+    private State findStateBeingPlaced() {
+        System.out.println("Finding state being placed.");
+        for (Node node : pane.getChildren()) {
+            if (node instanceof State && ((State) node).isSelected()) {
+                System.out.println("Found state being placed: " + ((State) node).getName());
+                return (State) node;
+            }
+        }
+        System.out.println("No state being placed found.");
+        return null;
+    }
+
+    private Object findUserData(Node startNode) {
+        System.out.println("Finding user data for node: " + startNode.getClass().getSimpleName());
+        Node current = startNode;
+        while (current != null) {
+            if (current.getUserData() != null) {
+                System.out.println("Found user data: " + current.getUserData().getClass().getSimpleName());
+                return current.getUserData();
+            }
+            current = current.getParent();
+        }
+        System.out.println("No user data found.");
+        return null;
+    }
+
     private boolean isOverlapping(State newState) {
-        // Get the new state's position and radius.
+        System.out.println("Checking for overlap with new state: " + newState.getName());
         double x1 = newState.getLayoutX();
         double y1 = newState.getLayoutY();
         double r1 = newState.getMainCircle().getRadius();
@@ -327,47 +794,30 @@ public class Application_Controler  implements SelectionListener  {
                 double x2 = otherState.getLayoutX();
                 double y2 = otherState.getLayoutY();
                 double r2 = otherState.getMainCircle().getRadius();
-                double distance = Math.hypot(x1 - x2, y1 - y2);
+                double distance = Math.sqrt(Math.pow(x1 - x2, 2) + Math.pow(y1 - y2, 2));
+
+                // Check if the distance between centers is less than the sum of radii
                 if (distance < (r1 + r2)) {
+                    System.out.println("Overlap detected between " + newState.getName() + " and " + otherState.getName());
                     return true;
                 }
             }
         }
+        System.out.println("No overlap detected.");
         return false;
     }
 
-    /**
-     * Shows an error alert when a new state overlaps with an existing state.
-     */
     private void showOverlapError() {
-        Alert alert = new Alert(Alert.AlertType.ERROR);
-        alert.setTitle("Invalid State Placement");
+        System.out.println("Showing overlap error alert.");
+        showAlert(Alert.AlertType.ERROR, "Invalid State Placement", "The state overlaps with an existing state. Please reposition it.");
+    }
+
+    private void showAlert(Alert.AlertType alertType, String title, String content) {
+        System.out.println("Showing alert: " + title + " - " + content);
+        Alert alert = new Alert(alertType);
+        alert.setTitle(title);
         alert.setHeaderText(null);
-        alert.setContentText("The state overlaps with an existing state. Please reposition it.");
+        alert.setContentText(content);
         alert.showAndWait();
-    }
-
-    public void onSelected(Object obj) {
-        if (obj instanceof State) {
-            // Update state-related UI components here if needed.
-            // Then switch to the State Settings tab.
-            TabPane.getSelectionModel().select(stateSettingsTab);
-        } else if (obj instanceof CurvedArrow) {
-
-            // Update transition-related UI components here if needed.
-            // Then switch to the Transition Settings tab.
-            TabPane.getSelectionModel().select(transitionSettingsTab);
-        }
-    }
-
-    @Override
-    public void onDeselected(Object obj) {
-        if (obj instanceof State) {
-//            ((State) obj).setName(stateNameTextField.getText());
-        }
-        else if (obj instanceof CurvedArrow) {
-
-        }
-
     }
 }
