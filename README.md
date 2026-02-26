@@ -151,7 +151,7 @@ Experience the **DFA Minimizer** in action. The interface is designed to provide
  The application strictly follows the **Model-View-Controller (MVC)** architectural pattern to ensure separation of concerns and maintainability.
 
 <div align="center">
-  <img src="uml.png" alt="Screenshot of DFA Minimizer showing the minimized result and log output"  /> 
+  <img src="UML.png" alt="Screenshot of DFA Minimizer showing the minimized result and log output"  /> 
 </div>
 
 ---
