@@ -293,7 +293,7 @@ Distributed under the **MIT License**. See `LICENSE` for more information.
 
 ## 📧 Contact & Acknowledgments
 
-**Project Maintainer:** [Amkhodaei83](https://github.com/Amkhodaei83)
+**Project Maintainer:** [amir-hossein-khodae](https://github.com/amir-hossein-khodae)
 
 ### Acknowledgments
 
