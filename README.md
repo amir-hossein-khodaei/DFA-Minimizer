@@ -13,7 +13,7 @@
 ![DFA Minimizer Header](https://capsule-render.vercel.app/api?type=waving&color=gradient&height=220&section=header&text=DFA%20Minimizer&fontSize=80&animation=fadeIn&fontAlignY=35&desc=Interactive%20Automata%20Visualization%20Engine&descAlignY=55&descSize=25)
 
 <!-- TYPING SVG: Dynamic Value Propositions -->
-<a href="https://github.com/Amkhodaei83/DFA-Minimizer">
+<a href="https://github.com/amir-hossein-khodaei/dfa-minimizer-javafx">
   <img src="https://readme-typing-svg.demolab.com?font=Fira+Code&weight=600&size=24&duration=3000&pause=1000&color=38BDF8&center=true&vCenter=true&width=500&lines=Visualize+Finite+Automata+in+Real-Time;Minimize+DFAs+with+Table-Filling+Logic;Educational+Tool+for+Computer+Science;Built+with+Modern+JavaFX+21" alt="Typing Animation of DFA Features" />
 </a>
 
@@ -21,14 +21,14 @@
 
 <!-- BADGES: High-Value Signals -->
 <!-- Note: Build Status badge links to a workflow we will create in Phase 2 -->
-<a href="https://github.com/Amkhodaei83/DFA-Minimizer/actions">
-  <img src="https://img.shields.io/github/actions/workflow/status/Amkhodaei83/DFA-Minimizer/maven-build.yml?style=flat-square&logo=github&label=Build" alt="GitHub Build Status" />
+<a href="https://github.com/amir-hossein-khodaei/dfa-minimizer-javafx/actions">
+  <img src="https://img.shields.io/github/actions/workflow/status/amir-hossein-khodaei/dfa-minimizer-javafx/maven-build.yml?style=flat-square&logo=github&label=Build" alt="GitHub Build Status" />
 </a>
-<a href="https://github.com/Amkhodaei83/DFA-Minimizer/blob/main/LICENSE">
+<a href="https://github.com/amir-hossein-khodaei/dfa-minimizer-javafx/blob/main/LICENSE">
   <img src="https://img.shields.io/badge/License-MIT-green?style=flat-square&logo=opensourceinitiative" alt="MIT License" />
 </a>
-<a href="https://github.com/Amkhodaei83/DFA-Minimizer/releases">
-  <img src="https://img.shields.io/github/v/release/Amkhodaei83/DFA-Minimizer?style=flat-square&logo=github&color=blue" alt="Latest Release" />
+<a href="https://github.com/amir-hossein-khodaei/dfa-minimizer-javafx/releases">
+  <img src="https://img.shields.io/github/v/release/amir-hossein-khodaei/dfa-minimizer-javafx?style=flat-square&logo=github&color=blue" alt="Latest Release" />
 </a>
 <a href="https://www.java.com">
   <img src="https://img.shields.io/badge/Java-21-ED8B00?style=flat-square&logo=openjdk&logoColor=white" alt="Java 21" />
@@ -41,7 +41,7 @@
 <br />
 
 <!-- ACTION BUTTONS -->
-<a href="https://github.com/Amkhodaei83/DFA-Minimizer/releases/latest">
+<a href="https://github.com/amir-hossein-khodaei/dfa-minimizer-javafx/releases/latest">
   <kbd>⬇️ Download JAR</kbd>
 </a>
 &nbsp;&nbsp;
@@ -170,8 +170,8 @@ Follow these steps to set up the project locally. This application is built with
 
 1.  **Clone the repository**
     ```bash
-    git clone https://github.com/Amkhodaei83/DFA-Minimizer.git
-    cd DFA-Minimizer
+    git clone https://github.com/amir-hossein-khodaei/dfa-minimizer-javafx.git
+    cd dfa-minimizer-javafx
     ```
 
 2.  **Build the project**
@@ -258,7 +258,7 @@ We are actively working to expand the capabilities of DFA Minimizer. Current dev
 - [ ] **Export Options** — Export diagrams to PNG, SVG, or LaTeX (TikZ).
 - [ ] **Regex Integration** — Convert Regular Expressions directly to DFAs.
 
-See the [open issues](https://github.com/Amkhodaei83/DFA-Minimizer/issues) for a full list of proposed features (and known bugs).
+See the [open issues](https://github.com/amir-hossein-khodaei/dfa-minimizer-javafx/issues) for a full list of proposed features (and known bugs).
 
 ---
 
